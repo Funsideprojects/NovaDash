@@ -31,27 +31,37 @@ jobs:
             echo "found=false" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Detect Node.js package manager
+        id: node-pm
+        if: steps.node.outputs.found == 'true'
+        run: |
+          if [ -f "yarn.lock" ]; then
+            echo "manager=yarn" >> "$GITHUB_OUTPUT"
+          else
+            echo "manager=npm" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Set up Node.js
         if: steps.node.outputs.found == 'true'
         uses: actions/setup-node@v4
         with:
           node-version: lts/*
-          cache: ${{ hashFiles('package-lock.json') != '' && 'npm' || (hashFiles('yarn.lock') != '' && 'yarn' || 'npm') }}
+          cache: ${{ steps.node-pm.outputs.manager }}
 
       - name: Install Node.js dependencies
         if: steps.node.outputs.found == 'true'
         run: |
-          if [ -f "package-lock.json" ]; then
-            npm ci
-          elif [ -f "yarn.lock" ]; then
+          if [ "${{ steps.node-pm.outputs.manager }}" = "yarn" ]; then
             yarn install --frozen-lockfile
+          elif [ -f "package-lock.json" ]; then
+            npm ci
           else
             npm install
           fi
 
       - name: Audit Node.js dependencies for vulnerabilities
         if: steps.node.outputs.found == 'true'
-        run: npm audit --audit-level=high || true
+        run: npm audit --audit-level=high
 
       - name: Build (Node.js)
         if: steps.node.outputs.found == 'true'
