@@ -14,6 +14,7 @@ public class Particle {
     private final float vx;
     private float vy;
     private final float radius;
+    private final float gravity;
     private final int color;
     private int alpha = 255;
     private int life;
@@ -23,17 +24,18 @@ public class Particle {
 
     private static final Random RNG = new Random();
 
-    public Particle(float originX, float originY, int color) {
+    public Particle(float originX, float originY, int color, int screenWidth, int screenHeight) {
         x = originX;
         y = originY;
         this.color = color;
 
         float angle = RNG.nextFloat() * (float) (Math.PI * 2);
-        float speed = 2f + RNG.nextFloat() * 9f;
+        float speed = screenHeight * 0.001f + RNG.nextFloat() * (screenHeight * 0.004f);
         vx = (float) Math.cos(angle) * speed;
         vy = (float) Math.sin(angle) * speed;
 
-        radius = 2f + RNG.nextFloat() * 5f;
+        radius = screenWidth * 0.002f + RNG.nextFloat() * (screenWidth * 0.005f);
+        gravity = screenHeight * 0.0001f;
         maxLife = 25 + RNG.nextInt(25);
         life = maxLife;
 
@@ -43,7 +45,7 @@ public class Particle {
     public void update() {
         x += vx;
         y += vy;
-        vy += 0.25f;  // slight gravity
+        vy += gravity;  // slight gravity
         life--;
         alpha = (int) (255f * life / maxLife);
     }
