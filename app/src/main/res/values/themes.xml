@@ -1,0 +1,7 @@
+<resources>
+    <!-- Full-screen theme with no action bar -->
+    <style name="AppTheme" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowFullscreen">true</item>
+        <item name="android:windowContentOverlay">@null</item>
+    </style>
+</resources>
