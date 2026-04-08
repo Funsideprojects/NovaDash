@@ -511,15 +511,17 @@ public class GameView extends SurfaceView implements SurfaceHolder.Callback {
         canvas.drawText("Dodge meteors. Collect power-ups.", cx, cy - screenH * 0.09f, subtitlePaint);
         canvas.drawText("Drag your finger to steer the ship.", cx, cy - screenH * 0.04f, subtitlePaint);
 
-        canvas.drawText("[S] Shield   [T] Slow Time   [\u2665] Extra Life   [2x] Score Boost",
+        canvas.drawText("[S] Shield   [T] Slow Time",
                 cx, cy + screenH * 0.03f, legendPaint);
+        canvas.drawText("[\u2665] Extra Life   [2x] Score Boost",
+                cx, cy + screenH * 0.09f, legendPaint);
 
         if (highScore > 0) {
             bestPaint.setColor(Color.rgb(255, 220, 80));
-            canvas.drawText("BEST: " + highScore, cx, cy + screenH * 0.09f, bestPaint);
+            canvas.drawText("BEST: " + highScore, cx, cy + screenH * 0.16f, bestPaint);
         }
 
-        drawButton(canvas, cx, cy + screenH * 0.20f, "TAP TO PLAY");
+        drawButton(canvas, cx, cy + screenH * 0.27f, "TAP TO PLAY");
     }
 
     private void drawGameOverOverlay(Canvas canvas) {
