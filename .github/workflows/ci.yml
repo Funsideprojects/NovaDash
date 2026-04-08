@@ -1,0 +1,138 @@
+name: CI – Dependency Check & Run
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  # ──────────────────────────────────────────────────────────────────────────
+  # 1. Detect project type, install dependencies, and try to run the project
+  # ──────────────────────────────────────────────────────────────────────────
+  build-and-test:
+    name: Check Dependencies & Run
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # ── Node.js project ──────────────────────────────────────────────────
+      - name: Detect Node.js project
+        id: node
+        run: |
+          if [ -f "package.json" ]; then
+            echo "found=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "found=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Set up Node.js
+        if: steps.node.outputs.found == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: ${{ hashFiles('package-lock.json') != '' && 'npm' || (hashFiles('yarn.lock') != '' && 'yarn' || 'npm') }}
+
+      - name: Install Node.js dependencies
+        if: steps.node.outputs.found == 'true'
+        run: |
+          if [ -f "package-lock.json" ]; then
+            npm ci
+          elif [ -f "yarn.lock" ]; then
+            yarn install --frozen-lockfile
+          else
+            npm install
+          fi
+
+      - name: Audit Node.js dependencies for vulnerabilities
+        if: steps.node.outputs.found == 'true'
+        run: npm audit --audit-level=high || true
+
+      - name: Build (Node.js)
+        if: steps.node.outputs.found == 'true'
+        run: |
+          if npm run --silent 2>/dev/null | grep -q "^  build$"; then
+            npm run build
+          else
+            echo "No 'build' script found – skipping build step."
+          fi
+
+      - name: Run tests (Node.js)
+        if: steps.node.outputs.found == 'true'
+        run: |
+          if npm run --silent 2>/dev/null | grep -q "^  test$"; then
+            npm test
+          else
+            echo "No 'test' script found – skipping test step."
+          fi
+
+      # ── Python project ───────────────────────────────────────────────────
+      - name: Detect Python project
+        id: python
+        run: |
+          if [ -f "requirements.txt" ] || [ -f "pyproject.toml" ] || [ -f "setup.py" ]; then
+            echo "found=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "found=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Set up Python
+        if: steps.python.outputs.found == 'true'
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Install Python dependencies
+        if: steps.python.outputs.found == 'true'
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f "requirements.txt" ]; then
+            pip install -r requirements.txt
+          elif [ -f "pyproject.toml" ]; then
+            pip install .
+          elif [ -f "setup.py" ]; then
+            pip install -e .
+          fi
+
+      - name: Run Python tests
+        if: steps.python.outputs.found == 'true'
+        run: |
+          if python -m pytest --version > /dev/null 2>&1; then
+            python -m pytest
+          elif python -m unittest discover -h > /dev/null 2>&1; then
+            python -m unittest discover
+          else
+            echo "No test runner found – skipping test step."
+          fi
+
+      # ── No recognised project files ──────────────────────────────────────
+      - name: No project files found
+        if: steps.node.outputs.found == 'false' && steps.python.outputs.found == 'false'
+        run: |
+          echo "No package.json, requirements.txt, pyproject.toml, or setup.py detected."
+          echo "Add your project files and the CI will pick up the right toolchain automatically."
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # 2. Auto-merge PR into main and delete the source branch
+  # ──────────────────────────────────────────────────────────────────────────
+  auto-merge:
+    name: Merge PR & Delete Branch
+    needs: build-and-test
+    runs-on: ubuntu-latest
+    if: success()
+
+    steps:
+      - name: Merge pull request
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh pr merge "${{ github.event.pull_request.number }}" \
+            --repo "${{ github.repository }}" \
+            --squash \
+            --delete-branch \
+            --subject "Merge PR #${{ github.event.pull_request.number }}: ${{ github.event.pull_request.title }}"
