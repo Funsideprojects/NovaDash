@@ -1,0 +1,45 @@
+{
+    "logs": [
+        {
+            "outputFile": "com.novadash.game.app-mergeDebugResources-2:/values/values.xml",
+            "map": [
+                {
+                    "source": "C:\\Users\\isakh\\Documents\\SideProsejekt\\fungames\\NovaDash\\app\\src\\main\\res\\values\\themes.xml",
+                    "from": {
+                        "startLines": "2",
+                        "startColumns": "4",
+                        "startOffsets": "68",
+                        "endLines": "5",
+                        "endColumns": "12",
+                        "endOffsets": "272"
+                    },
+                    "to": {
+                        "startLines": "3",
+                        "startColumns": "4",
+                        "startOffsets": "101",
+                        "endLines": "6",
+                        "endColumns": "12",
+                        "endOffsets": "302"
+                    }
+                },
+                {
+                    "source": "C:\\Users\\isakh\\Documents\\SideProsejekt\\fungames\\NovaDash\\app\\src\\main\\res\\values\\strings.xml",
+                    "from": {
+                        "startLines": "1",
+                        "startColumns": "4",
+                        "startOffsets": "17",
+                        "endColumns": "45",
+                        "endOffsets": "58"
+                    },
+                    "to": {
+                        "startLines": "2",
+                        "startColumns": "4",
+                        "startOffsets": "55",
+                        "endColumns": "45",
+                        "endOffsets": "96"
+                    }
+                }
+            ]
+        }
+    ]
+}

@@ -1,0 +1,8 @@
+com.novadash.game.app-pngs-0 C:\Users\isakh\Documents\SideProsejekt\fungames\NovaDash\app\build\generated\res\pngs\debug
+com.novadash.game.app-resValues-1 C:\Users\isakh\Documents\SideProsejekt\fungames\NovaDash\app\build\generated\res\resValues\debug
+com.novadash.game.app-updated_navigation_xml-2 C:\Users\isakh\Documents\SideProsejekt\fungames\NovaDash\app\build\generated\updated_navigation_xml\debug
+com.novadash.game.app-packageDebugResources-3 C:\Users\isakh\Documents\SideProsejekt\fungames\NovaDash\app\build\intermediates\incremental\debug\packageDebugResources\merged.dir
+com.novadash.game.app-packageDebugResources-4 C:\Users\isakh\Documents\SideProsejekt\fungames\NovaDash\app\build\intermediates\incremental\debug\packageDebugResources\stripped.dir
+com.novadash.game.app-debug-5 C:\Users\isakh\Documents\SideProsejekt\fungames\NovaDash\app\build\intermediates\merged_res\debug\mergeDebugResources
+com.novadash.game.app-debug-6 C:\Users\isakh\Documents\SideProsejekt\fungames\NovaDash\app\src\debug\res
+com.novadash.game.app-main-7 C:\Users\isakh\Documents\SideProsejekt\fungames\NovaDash\app\src\main\res
