@@ -30,11 +30,15 @@ public class Particle {
         this.color = color;
 
         float angle = RNG.nextFloat() * (float) (Math.PI * 2);
-        float speed = screenHeight * 0.001f + RNG.nextFloat() * (screenHeight * 0.004f);
+        float baseSpeed = screenHeight * 0.001f;
+        float speedRange = screenHeight * 0.004f;
+        float speed = baseSpeed + RNG.nextFloat() * speedRange;
         vx = (float) Math.cos(angle) * speed;
         vy = (float) Math.sin(angle) * speed;
 
-        radius = screenWidth * 0.002f + RNG.nextFloat() * (screenWidth * 0.005f);
+        float baseRadius = screenWidth * 0.002f;
+        float radiusRange = screenWidth * 0.005f;
+        radius = baseRadius + RNG.nextFloat() * radiusRange;
         gravity = screenHeight * 0.0001f;
         maxLife = 25 + RNG.nextInt(25);
         life = maxLife;

@@ -237,10 +237,12 @@ public class GameView extends SurfaceView implements SurfaceHolder.Callback {
         starY     = new float[STAR_COUNT];
         starR     = new float[STAR_COUNT];
         starAlpha = new int[STAR_COUNT];
+        float baseStarRadius  = screenW * 0.0005f;
+        float starRadiusRange = screenW * 0.002f;
         for (int i = 0; i < STAR_COUNT; i++) {
             starX[i]     = rng.nextFloat() * screenW;
             starY[i]     = rng.nextFloat() * screenH;
-            starR[i]     = screenW * 0.0005f + rng.nextFloat() * (screenW * 0.002f);
+            starR[i]     = baseStarRadius + rng.nextFloat() * starRadiusRange;
             starAlpha[i] = 80 + rng.nextInt(175);
         }
     }
