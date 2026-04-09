@@ -237,10 +237,12 @@ public class GameView extends SurfaceView implements SurfaceHolder.Callback {
         starY     = new float[STAR_COUNT];
         starR     = new float[STAR_COUNT];
         starAlpha = new int[STAR_COUNT];
+        float baseStarRadius  = screenW * 0.0005f;
+        float starRadiusRange = screenW * 0.002f;
         for (int i = 0; i < STAR_COUNT; i++) {
             starX[i]     = rng.nextFloat() * screenW;
             starY[i]     = rng.nextFloat() * screenH;
-            starR[i]     = 0.5f + rng.nextFloat() * 2.5f;
+            starR[i]     = baseStarRadius + rng.nextFloat() * starRadiusRange;
             starAlpha[i] = 80 + rng.nextInt(175);
         }
     }
@@ -407,7 +409,7 @@ public class GameView extends SurfaceView implements SurfaceHolder.Callback {
 
     private void spawnParticles(float x, float y, int color, int count) {
         for (int i = 0; i < count; i++) {
-            particles.add(new Particle(x, y, color));
+            particles.add(new Particle(x, y, color, screenW, screenH));
         }
     }
 
@@ -467,8 +469,9 @@ public class GameView extends SurfaceView implements SurfaceHolder.Callback {
 
         // Score (left)
         String scoreStr = "SCORE: " + score;
+        float shadowOff = screenH * 0.001f;
         hudShadowPaint.setTextAlign(Paint.Align.LEFT);
-        canvas.drawText(scoreStr, pad + 2, topY + 2, hudShadowPaint);
+        canvas.drawText(scoreStr, pad + shadowOff, topY + shadowOff, hudShadowPaint);
         canvas.drawText(scoreStr, pad, topY, hudPaint);
 
         // Lives (right) — up to 5 hearts
@@ -556,8 +559,9 @@ public class GameView extends SurfaceView implements SurfaceHolder.Callback {
     private void drawButton(Canvas canvas, float cx, float cy, String label) {
         float btnW = screenW * 0.42f;
         float btnH = screenH * 0.075f;
+        float cornerRadius = screenH * 0.015f;
         RectF rect = new RectF(cx - btnW / 2, cy - btnH / 2, cx + btnW / 2, cy + btnH / 2);
-        canvas.drawRoundRect(rect, 24, 24, buttonPaint);
+        canvas.drawRoundRect(rect, cornerRadius, cornerRadius, buttonPaint);
         canvas.drawText(label, cx, cy + buttonTextPaint.getTextSize() * 0.36f, buttonTextPaint);
     }
 
