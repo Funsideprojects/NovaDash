@@ -91,9 +91,29 @@ public class GameView extends SurfaceView implements SurfaceHolder.Callback {
 
     private int invincibleFrames;
 
+    // ── Revive-via-ad ──────────────────────────────────────────────────────────
+
+    /** True once the player has used the watch-ad revive this session. */
+    private boolean reviveUsed = false;
+
+    /** Listener that asks the host Activity to show a rewarded ad. */
+    public interface ReviveAdListener {
+        void onWatchAdRequested();
+    }
+
+    private ReviveAdListener reviveAdListener;
+
+    public void setReviveAdListener(ReviveAdListener listener) {
+        this.reviveAdListener = listener;
+    }
+
     // ── Touch ──────────────────────────────────────────────────────────────────
 
     private float touchX = -1;
+
+    /** Button rectangles used for hit-testing on the game-over screen. */
+    private final RectF watchAdBtnRect   = new RectF();
+    private final RectF playAgainBtnRect = new RectF();
 
     // ── Paints ─────────────────────────────────────────────────────────────────
 
@@ -106,6 +126,7 @@ public class GameView extends SurfaceView implements SurfaceHolder.Callback {
     private Paint scorePaint;
     private Paint bestPaint;
     private Paint buttonPaint;
+    private Paint watchAdButtonPaint;
     private Paint buttonTextPaint;
     private Paint hudPaint;
     private Paint hudShadowPaint;
@@ -207,6 +228,10 @@ public class GameView extends SurfaceView implements SurfaceHolder.Callback {
         buttonPaint.setColor(Color.rgb(40, 130, 255));
         buttonPaint.setStyle(Paint.Style.FILL);
 
+        watchAdButtonPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        watchAdButtonPaint.setColor(Color.rgb(30, 180, 80));
+        watchAdButtonPaint.setStyle(Paint.Style.FILL);
+
         buttonTextPaint = makePaint(Color.WHITE, screenH * 0.042f, Paint.Align.CENTER, true);
 
         hudPaint = makePaint(Color.WHITE, screenH * 0.036f, Paint.Align.LEFT, true);
@@ -263,6 +288,7 @@ public class GameView extends SurfaceView implements SurfaceHolder.Callback {
         scoreBoostTimer  = 0;
         invincibleFrames = 0;
         touchX           = screenW / 2f;
+        reviveUsed       = false;
 
         gameState = State.PLAYING;
     }
@@ -551,7 +577,17 @@ public class GameView extends SurfaceView implements SurfaceHolder.Callback {
             drawTextFitted(canvas, "Best: " + highScore, cx, cy + screenH * 0.06f, bestPaint, maxW);
         }
 
-        drawButton(canvas, cx, cy + screenH * 0.18f, "PLAY AGAIN");
+        if (!reviveUsed) {
+            // Show "Watch Ad" button above "Play Again" when revive is still available
+            drawButton(canvas, cx, cy + screenH * 0.18f,
+                    "\u25B6 WATCH AD TO REVIVE", watchAdButtonPaint, watchAdBtnRect);
+            drawButton(canvas, cx, cy + screenH * 0.30f,
+                    "PLAY AGAIN", buttonPaint, playAgainBtnRect);
+        } else {
+            watchAdBtnRect.setEmpty();
+            drawButton(canvas, cx, cy + screenH * 0.18f,
+                    "PLAY AGAIN", buttonPaint, playAgainBtnRect);
+        }
     }
 
     private void drawPauseOverlay(Canvas canvas) {
@@ -580,11 +616,17 @@ public class GameView extends SurfaceView implements SurfaceHolder.Callback {
     }
 
     private void drawButton(Canvas canvas, float cx, float cy, String label) {
+        drawButton(canvas, cx, cy, label, buttonPaint, null);
+    }
+
+    private void drawButton(Canvas canvas, float cx, float cy, String label,
+                            Paint bgColor, RectF outRect) {
         float btnW = screenW * 0.42f;
         float btnH = screenH * 0.075f;
         float cornerRadius = screenH * 0.015f;
         RectF rect = new RectF(cx - btnW / 2, cy - btnH / 2, cx + btnW / 2, cy + btnH / 2);
-        canvas.drawRoundRect(rect, cornerRadius, cornerRadius, buttonPaint);
+        if (outRect != null) outRect.set(rect);
+        canvas.drawRoundRect(rect, cornerRadius, cornerRadius, bgColor);
         drawTextFitted(canvas, label, cx, cy + buttonTextPaint.getTextSize() * 0.36f,
                 buttonTextPaint, btnW * 0.9f);
     }
@@ -596,6 +638,7 @@ public class GameView extends SurfaceView implements SurfaceHolder.Callback {
     @Override
     public boolean onTouchEvent(MotionEvent event) {
         float ex = event.getX();
+        float ey = event.getY();
 
         switch (event.getActionMasked()) {
             case MotionEvent.ACTION_DOWN:
@@ -608,7 +651,16 @@ public class GameView extends SurfaceView implements SurfaceHolder.Callback {
 
             case MotionEvent.ACTION_UP:
             case MotionEvent.ACTION_POINTER_UP:
-                if (gameState == State.MENU || gameState == State.GAME_OVER) {
+                if (gameState == State.GAME_OVER) {
+                    if (!watchAdBtnRect.isEmpty() && watchAdBtnRect.contains(ex, ey)) {
+                        // Player tapped "Watch Ad to Revive"
+                        if (reviveAdListener != null) {
+                            reviveAdListener.onWatchAdRequested();
+                        }
+                    } else if (!playAgainBtnRect.isEmpty() && playAgainBtnRect.contains(ex, ey)) {
+                        startGame();
+                    }
+                } else if (gameState == State.MENU) {
                     startGame();
                 } else if (gameState == State.PAUSED) {
                     gameState = State.PLAYING;
@@ -616,5 +668,19 @@ public class GameView extends SurfaceView implements SurfaceHolder.Callback {
                 break;
         }
         return true;
+    }
+
+    /**
+     * Called by the host Activity after a rewarded ad has been shown.
+     * Revives the player with one life and resumes play.
+     * No-op if the game is not currently in GAME_OVER state or revive was already used.
+     */
+    public void revive() {
+        if (gameState != State.GAME_OVER || reviveUsed) return;
+        reviveUsed       = true;
+        lives            = 1;
+        invincibleFrames = HIT_INVINCIBLE;
+        meteors.clear();
+        gameState        = State.PLAYING;
     }
 }
