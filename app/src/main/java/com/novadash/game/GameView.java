@@ -508,20 +508,24 @@ public class GameView extends SurfaceView implements SurfaceHolder.Callback {
         float cx = screenW / 2f;
         float cy = screenH / 2f;
 
-        canvas.drawText("NOVA DASH", cx, cy - screenH * 0.18f, titlePaint);
+        float maxW = screenW * 0.92f;
+
+        drawTextFitted(canvas, "NOVA DASH", cx, cy - screenH * 0.18f, titlePaint, maxW);
 
         subtitlePaint.setColor(Color.rgb(190, 225, 255));
-        canvas.drawText("Dodge meteors. Collect power-ups.", cx, cy - screenH * 0.09f, subtitlePaint);
-        canvas.drawText("Drag your finger to steer the ship.", cx, cy - screenH * 0.04f, subtitlePaint);
+        drawTextFitted(canvas, "Dodge meteors. Collect power-ups.",
+                cx, cy - screenH * 0.09f, subtitlePaint, maxW);
+        drawTextFitted(canvas, "Drag your finger to steer the ship.",
+                cx, cy - screenH * 0.04f, subtitlePaint, maxW);
 
-        canvas.drawText("[S] Shield   [T] Slow Time",
-                cx, cy + screenH * 0.03f, legendPaint);
-        canvas.drawText("[\u2665] Extra Life   [2x] Score Boost",
-                cx, cy + screenH * 0.09f, legendPaint);
+        drawTextFitted(canvas, "[S] Shield   [T] Slow Time",
+                cx, cy + screenH * 0.03f, legendPaint, maxW);
+        drawTextFitted(canvas, "[\u2665] Extra Life   [2x] Score Boost",
+                cx, cy + screenH * 0.09f, legendPaint, maxW);
 
         if (highScore > 0) {
             bestPaint.setColor(Color.rgb(255, 220, 80));
-            canvas.drawText("BEST: " + highScore, cx, cy + screenH * 0.16f, bestPaint);
+            drawTextFitted(canvas, "BEST: " + highScore, cx, cy + screenH * 0.16f, bestPaint, maxW);
         }
 
         drawButton(canvas, cx, cy + screenH * 0.27f, "TAP TO PLAY");
@@ -533,16 +537,18 @@ public class GameView extends SurfaceView implements SurfaceHolder.Callback {
         float cx = screenW / 2f;
         float cy = screenH / 2f;
 
-        canvas.drawText("GAME OVER", cx, cy - screenH * 0.12f, gameOverPaint);
-        canvas.drawText("Score: " + score, cx, cy - screenH * 0.01f, scorePaint);
+        float maxW = screenW * 0.92f;
+
+        drawTextFitted(canvas, "GAME OVER", cx, cy - screenH * 0.12f, gameOverPaint, maxW);
+        drawTextFitted(canvas, "Score: " + score, cx, cy - screenH * 0.01f, scorePaint, maxW);
 
         if (score >= highScore && highScore > 0) {
             Paint newBest = new Paint(scorePaint);
             newBest.setColor(Color.rgb(255, 200, 50));
             newBest.setTextSize(screenH * 0.038f);
-            canvas.drawText("NEW BEST!", cx, cy + screenH * 0.06f, newBest);
+            drawTextFitted(canvas, "NEW BEST!", cx, cy + screenH * 0.06f, newBest, maxW);
         } else if (highScore > 0) {
-            canvas.drawText("Best: " + highScore, cx, cy + screenH * 0.06f, bestPaint);
+            drawTextFitted(canvas, "Best: " + highScore, cx, cy + screenH * 0.06f, bestPaint, maxW);
         }
 
         drawButton(canvas, cx, cy + screenH * 0.18f, "PLAY AGAIN");
@@ -552,8 +558,25 @@ public class GameView extends SurfaceView implements SurfaceHolder.Callback {
         canvas.drawRect(0, 0, screenW, screenH, overlayPaint);
         float cx = screenW / 2f;
         float cy = screenH / 2f;
-        canvas.drawText("PAUSED", cx, cy - screenH * 0.04f, titlePaint);
-        canvas.drawText("Tap to resume", cx, cy + screenH * 0.05f, subtitlePaint);
+        float maxW = screenW * 0.92f;
+        drawTextFitted(canvas, "PAUSED", cx, cy - screenH * 0.04f, titlePaint, maxW);
+        drawTextFitted(canvas, "Tap to resume", cx, cy + screenH * 0.05f, subtitlePaint, maxW);
+    }
+
+    /**
+     * Draws text centred at (cx, y) exactly like {@code canvas.drawText}, but automatically
+     * reduces the paint's text size so the string never exceeds {@code maxWidth}.
+     * The original text size is restored after drawing.
+     */
+    private void drawTextFitted(Canvas canvas, String text, float cx, float y,
+                                Paint paint, float maxWidth) {
+        float original = paint.getTextSize();
+        float measured = paint.measureText(text);
+        if (measured > maxWidth) {
+            paint.setTextSize(original * maxWidth / measured);
+        }
+        canvas.drawText(text, cx, y, paint);
+        paint.setTextSize(original);
     }
 
     private void drawButton(Canvas canvas, float cx, float cy, String label) {
@@ -562,7 +585,8 @@ public class GameView extends SurfaceView implements SurfaceHolder.Callback {
         float cornerRadius = screenH * 0.015f;
         RectF rect = new RectF(cx - btnW / 2, cy - btnH / 2, cx + btnW / 2, cy + btnH / 2);
         canvas.drawRoundRect(rect, cornerRadius, cornerRadius, buttonPaint);
-        canvas.drawText(label, cx, cy + buttonTextPaint.getTextSize() * 0.36f, buttonTextPaint);
+        drawTextFitted(canvas, label, cx, cy + buttonTextPaint.getTextSize() * 0.36f,
+                buttonTextPaint, btnW * 0.9f);
     }
 
     // ══════════════════════════════════════════════════════════════════════════
