@@ -26,8 +26,11 @@ import java.util.Random;
  *      [T]  Slow Time  – halves meteor speed  (5 s)
  *      [♥]  Extra Life – adds one life (max 5)
  *      [2x] Score Boost – doubles score gain  (5 s)
+ *  • Locked chests also fall and can be opened with a key (bought in the shop).
+ *      Opening a chest gives a random amount of coins (10–100) or a random power-up.
  *  • The game speeds up every 10 seconds.
  *  • Three lives; losing all ends the game.
+ *  • Visit the shop (from the menu or game-over screen) to spend coins on keys.
  */
 public class GameView extends SurfaceView implements SurfaceHolder.Callback {
 
@@ -40,10 +43,18 @@ public class GameView extends SurfaceView implements SurfaceHolder.Callback {
     private static final int HIT_INVINCIBLE = 120;   // 2 seconds
     /** Frames between automatic difficulty increases. */
     private static final int DIFFICULTY_INTERVAL = 600; // 10 seconds
+    /** Frames between chest spawns. */
+    private static final int CHEST_INTERVAL = 900;  // 15 seconds
+    /** Coin cost of one key in the shop. */
+    private static final int KEY_COST = 50;
+    /** Score points needed to earn one coin at game-over. */
+    private static final int SCORE_PER_COIN = 50;
+    /** How long (frames) the "need a key" notification is shown. */
+    private static final int NO_KEY_NOTIFY_DURATION = 120; // 2 seconds
 
     // ── Game state ─────────────────────────────────────────────────────────────
 
-    private enum State { MENU, PLAYING, PAUSED, GAME_OVER }
+    private enum State { MENU, PLAYING, PAUSED, GAME_OVER, SHOP }
     private volatile State gameState = State.MENU;
 
     // ── Screen ─────────────────────────────────────────────────────────────────
@@ -66,6 +77,7 @@ public class GameView extends SurfaceView implements SurfaceHolder.Callback {
     private Player player;
     private final List<Meteor>   meteors   = new ArrayList<>();
     private final List<PowerUp>  powerUps  = new ArrayList<>();
+    private final List<Chest>    chests    = new ArrayList<>();
     private final List<Particle> particles = new ArrayList<>();
 
     // ── Scoring / lives ────────────────────────────────────────────────────────
@@ -73,6 +85,14 @@ public class GameView extends SurfaceView implements SurfaceHolder.Callback {
     private long score;
     private int  lives;
     private int  highScore;
+
+    // ── Coins & keys (persist across rounds within a session) ─────────────────
+
+    private int coins = 0;
+    private int keys  = 0;
+
+    /** Frames remaining on the "Need a key!" HUD notification (0 = hidden). */
+    private int noKeyNotifyTimer = 0;
 
     // ── Power-up timers (in frames) ────────────────────────────────────────────
 
@@ -95,6 +115,13 @@ public class GameView extends SurfaceView implements SurfaceHolder.Callback {
 
     private float touchX = -1;
 
+    // ── Shop button hit areas (set during rendering, read during touch) ────────
+
+    private final RectF shopBuyKeyRect  = new RectF();
+    private final RectF shopBackRect    = new RectF();
+    /** Set during menu/game-over render so the touch handler knows where SHOP button is. */
+    private final RectF openShopRect    = new RectF();
+
     // ── Paints ─────────────────────────────────────────────────────────────────
 
     private Paint bgPaint;
@@ -106,12 +133,15 @@ public class GameView extends SurfaceView implements SurfaceHolder.Callback {
     private Paint scorePaint;
     private Paint bestPaint;
     private Paint buttonPaint;
+    private Paint buttonDisabledPaint;
     private Paint buttonTextPaint;
     private Paint hudPaint;
     private Paint hudShadowPaint;
     private Paint livesPaint;
     private Paint puHudPaint;
     private Paint overlayPaint;
+    private Paint coinHudPaint;
+    private Paint notifyPaint;
 
     // ══════════════════════════════════════════════════════════════════════════
     // Construction / Surface lifecycle
@@ -207,6 +237,10 @@ public class GameView extends SurfaceView implements SurfaceHolder.Callback {
         buttonPaint.setColor(Color.rgb(40, 130, 255));
         buttonPaint.setStyle(Paint.Style.FILL);
 
+        buttonDisabledPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        buttonDisabledPaint.setColor(Color.rgb(70, 70, 90));
+        buttonDisabledPaint.setStyle(Paint.Style.FILL);
+
         buttonTextPaint = makePaint(Color.WHITE, screenH * 0.042f, Paint.Align.CENTER, true);
 
         hudPaint = makePaint(Color.WHITE, screenH * 0.036f, Paint.Align.LEFT, true);
@@ -218,6 +252,12 @@ public class GameView extends SurfaceView implements SurfaceHolder.Callback {
                 Paint.Align.RIGHT, true);
 
         puHudPaint = makePaint(Color.WHITE, screenH * 0.026f, Paint.Align.LEFT, true);
+
+        coinHudPaint = makePaint(Color.rgb(215, 170, 35), screenH * 0.030f,
+                Paint.Align.RIGHT, true);
+
+        notifyPaint = makePaint(Color.rgb(255, 200, 50), screenH * 0.032f,
+                Paint.Align.CENTER, true);
 
         overlayPaint = new Paint();
         overlayPaint.setColor(Color.argb(160, 0, 0, 10));
@@ -251,6 +291,7 @@ public class GameView extends SurfaceView implements SurfaceHolder.Callback {
         player = new Player(screenW, screenH);
         meteors.clear();
         powerUps.clear();
+        chests.clear();
         particles.clear();
 
         score            = 0;
@@ -262,6 +303,7 @@ public class GameView extends SurfaceView implements SurfaceHolder.Callback {
         slowTimer        = 0;
         scoreBoostTimer  = 0;
         invincibleFrames = 0;
+        noKeyNotifyTimer = 0;
         touchX           = screenW / 2f;
 
         gameState = State.PLAYING;
@@ -313,6 +355,11 @@ public class GameView extends SurfaceView implements SurfaceHolder.Callback {
         // ── Spawn power-ups ──────────────────────────────────────────────────
         if (frameCount % POWERUP_INTERVAL == 0) {
             powerUps.add(new PowerUp(screenW, screenH));
+        }
+
+        // ── Spawn chests ─────────────────────────────────────────────────────
+        if (frameCount % CHEST_INTERVAL == 0) {
+            chests.add(new Chest(screenW, screenH));
         }
 
         float slowFactor = (slowTimer > 0) ? 0.4f : 1.0f;
@@ -370,6 +417,38 @@ public class GameView extends SurfaceView implements SurfaceHolder.Callback {
             }
         }
 
+        // ── Update & open chests ─────────────────────────────────────────────
+        Iterator<Chest> ci = chests.iterator();
+        while (ci.hasNext()) {
+            Chest chest = ci.next();
+            chest.update(screenH);
+
+            if (!chest.isActive()) {
+                ci.remove();
+                continue;
+            }
+
+            if (player.collidesWith(chest.getX(), chest.getY(), chest.getRadius())) {
+                if (keys > 0) {
+                    // Open the chest
+                    keys--;
+                    spawnParticles(chest.getX(), chest.getY(), Color.rgb(215, 170, 35), 16);
+                    if (chest.getRewardType() == Chest.RewardType.COINS) {
+                        coins += chest.getCoinReward();
+                    } else {
+                        applyPowerUp(chest.getPowerUpReward());
+                        spawnParticles(chest.getX(), chest.getY(),
+                                powerUpColorFor(chest.getPowerUpReward()), 10);
+                    }
+                    chest.deactivate();
+                    ci.remove();
+                } else {
+                    // No key – show notification and leave chest active
+                    noKeyNotifyTimer = NO_KEY_NOTIFY_DURATION;
+                }
+            }
+        }
+
         // ── Tick power-up timers ─────────────────────────────────────────────
         if (shieldTimer > 0) {
             shieldTimer--;
@@ -377,9 +456,10 @@ public class GameView extends SurfaceView implements SurfaceHolder.Callback {
         } else {
             player.setShielded(false);
         }
-        if (slowTimer      > 0) slowTimer--;
-        if (scoreBoostTimer > 0) scoreBoostTimer--;
+        if (slowTimer        > 0) slowTimer--;
+        if (scoreBoostTimer  > 0) scoreBoostTimer--;
         if (invincibleFrames > 0) invincibleFrames--;
+        if (noKeyNotifyTimer > 0) noKeyNotifyTimer--;
 
         // ── Particles ────────────────────────────────────────────────────────
         Iterator<Particle> parti = particles.iterator();
@@ -388,10 +468,19 @@ public class GameView extends SurfaceView implements SurfaceHolder.Callback {
             p.update();
             if (!p.isActive()) parti.remove();
         }
+
+        // ── Convert score to coins on game-over ──────────────────────────────
+        if (gameState == State.GAME_OVER) {
+            coins += (int) (score / SCORE_PER_COIN);
+        }
     }
 
     private void applyPowerUp(PowerUp pu) {
-        switch (pu.getType()) {
+        applyPowerUp(pu.getType());
+    }
+
+    private void applyPowerUp(PowerUp.Type type) {
+        switch (type) {
             case SHIELD:
                 shieldTimer = POWERUP_DURATION;
                 break;
@@ -404,6 +493,16 @@ public class GameView extends SurfaceView implements SurfaceHolder.Callback {
             case SCORE_BOOST:
                 scoreBoostTimer = POWERUP_DURATION;
                 break;
+        }
+    }
+
+    private static int powerUpColorFor(PowerUp.Type type) {
+        switch (type) {
+            case SHIELD:      return Color.rgb(40, 100, 255);
+            case SLOW_TIME:   return Color.rgb(220, 180, 0);
+            case EXTRA_LIFE:  return Color.rgb(230, 40, 90);
+            case SCORE_BOOST:
+            default:          return Color.rgb(30, 200, 80);
         }
     }
 
@@ -451,12 +550,16 @@ public class GameView extends SurfaceView implements SurfaceHolder.Callback {
                 drawHUD(canvas);
                 drawGameOverOverlay(canvas);
                 break;
+            case SHOP:
+                drawShop(canvas);
+                break;
         }
     }
 
     private void drawGameObjects(Canvas canvas) {
         for (Meteor  m  : meteors)  m.draw(canvas);
         for (PowerUp pu : powerUps) pu.draw(canvas);
+        for (Chest   c  : chests)   c.draw(canvas);
 
         // Player flickers during post-hit invincibility
         boolean showPlayer = (invincibleFrames <= 0) || (invincibleFrames % 10 < 6);
@@ -498,6 +601,20 @@ public class GameView extends SurfaceView implements SurfaceHolder.Callback {
             puHudPaint.setColor(Color.rgb(60, 240, 100));
             canvas.drawText("2x SCORE " + secondsLeft(scoreBoostTimer) + "s", pad, puY, puHudPaint);
         }
+
+        // Coins & keys (bottom-right corner)
+        float bottomPad = screenH * 0.03f;
+        coinHudPaint.setTextAlign(Paint.Align.RIGHT);
+        canvas.drawText("\uD83D\uDD11 " + keys + "  \uD83E\uDE99 " + coins,
+                screenW - pad, screenH - bottomPad, coinHudPaint);
+
+        // "Need a key!" notification (centred, fades slightly)
+        if (noKeyNotifyTimer > 0) {
+            int alpha = Math.min(255, noKeyNotifyTimer * 4);
+            notifyPaint.setAlpha(alpha);
+            drawTextFitted(canvas, "\uD83D\uDD12 Need a key! Visit the shop.",
+                    screenW / 2f, screenH * 0.45f, notifyPaint, screenW * 0.88f);
+        }
     }
 
     private static int secondsLeft(int frames) {
@@ -528,7 +645,18 @@ public class GameView extends SurfaceView implements SurfaceHolder.Callback {
             drawTextFitted(canvas, "BEST: " + highScore, cx, cy + screenH * 0.16f, bestPaint, maxW);
         }
 
-        drawButton(canvas, cx, cy + screenH * 0.27f, "TAP TO PLAY");
+        // Coins & keys info
+        bestPaint.setColor(Color.rgb(215, 170, 35));
+        drawTextFitted(canvas, "\uD83E\uDE99 " + coins + "   \uD83D\uDD11 " + keys,
+                cx, cy + screenH * 0.23f, bestPaint, maxW);
+
+        // Play button
+        drawButton(canvas, cx, cy + screenH * 0.31f, "TAP TO PLAY");
+
+        // Shop button – stored in openShopRect for touch detection
+        float shopBtnCy = cy + screenH * 0.41f;
+        recordButtonRect(openShopRect, cx, shopBtnCy);
+        drawButton(canvas, cx, shopBtnCy, "SHOP");
     }
 
     private void drawGameOverOverlay(Canvas canvas) {
@@ -539,19 +667,79 @@ public class GameView extends SurfaceView implements SurfaceHolder.Callback {
 
         float maxW = screenW * 0.92f;
 
-        drawTextFitted(canvas, "GAME OVER", cx, cy - screenH * 0.12f, gameOverPaint, maxW);
-        drawTextFitted(canvas, "Score: " + score, cx, cy - screenH * 0.01f, scorePaint, maxW);
+        drawTextFitted(canvas, "GAME OVER", cx, cy - screenH * 0.14f, gameOverPaint, maxW);
+        drawTextFitted(canvas, "Score: " + score, cx, cy - screenH * 0.03f, scorePaint, maxW);
 
         if (score >= highScore && highScore > 0) {
             Paint newBest = new Paint(scorePaint);
             newBest.setColor(Color.rgb(255, 200, 50));
             newBest.setTextSize(screenH * 0.038f);
-            drawTextFitted(canvas, "NEW BEST!", cx, cy + screenH * 0.06f, newBest, maxW);
+            drawTextFitted(canvas, "NEW BEST!", cx, cy + screenH * 0.05f, newBest, maxW);
         } else if (highScore > 0) {
-            drawTextFitted(canvas, "Best: " + highScore, cx, cy + screenH * 0.06f, bestPaint, maxW);
+            drawTextFitted(canvas, "Best: " + highScore, cx, cy + screenH * 0.05f, bestPaint, maxW);
         }
 
-        drawButton(canvas, cx, cy + screenH * 0.18f, "PLAY AGAIN");
+        // Coins earned this round
+        bestPaint.setColor(Color.rgb(215, 170, 35));
+        drawTextFitted(canvas, "\uD83E\uDE99 Coins: " + coins + "   \uD83D\uDD11 Keys: " + keys,
+                cx, cy + screenH * 0.13f, bestPaint, maxW);
+
+        drawButton(canvas, cx, cy + screenH * 0.22f, "PLAY AGAIN");
+
+        // Shop button
+        float shopBtnCy = cy + screenH * 0.32f;
+        recordButtonRect(openShopRect, cx, shopBtnCy);
+        drawButton(canvas, cx, shopBtnCy, "SHOP");
+    }
+
+    private void drawShop(Canvas canvas) {
+        float cx   = screenW / 2f;
+        float cy   = screenH / 2f;
+        float maxW = screenW * 0.88f;
+
+        // Title
+        drawTextFitted(canvas, "SHOP", cx, cy - screenH * 0.30f, titlePaint, maxW);
+
+        // Current coins & keys
+        scorePaint.setTextSize(screenH * 0.044f);
+        drawTextFitted(canvas, "\uD83E\uDE99 Coins: " + coins,
+                cx, cy - screenH * 0.18f, scorePaint, maxW);
+        scorePaint.setTextSize(screenH * 0.052f);
+
+        drawTextFitted(canvas, "\uD83D\uDD11 Keys:  " + keys,
+                cx, cy - screenH * 0.10f, scorePaint, maxW);
+
+        // Divider
+        Paint divPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        divPaint.setColor(Color.rgb(60, 90, 140));
+        divPaint.setStyle(Paint.Style.STROKE);
+        divPaint.setStrokeWidth(screenH * 0.002f);
+        canvas.drawLine(cx - maxW / 2f, cy - screenH * 0.03f,
+                cx + maxW / 2f, cy - screenH * 0.03f, divPaint);
+
+        // Item description
+        subtitlePaint.setColor(Color.rgb(190, 225, 255));
+        drawTextFitted(canvas, "\uD83D\uDD11 Key  –  " + KEY_COST + " coins",
+                cx, cy + screenH * 0.04f, subtitlePaint, maxW);
+        legendPaint.setColor(Color.rgb(160, 200, 255));
+        drawTextFitted(canvas, "Use keys to open locked chests mid-round.",
+                cx, cy + screenH * 0.10f, legendPaint, maxW);
+
+        // BUY button (disabled style when not enough coins)
+        boolean canBuy = coins >= KEY_COST;
+        float buyBtnCy = cy + screenH * 0.21f;
+        recordButtonRect(shopBuyKeyRect, cx, buyBtnCy);
+        if (canBuy) {
+            drawButton(canvas, cx, buyBtnCy, "BUY KEY  (" + KEY_COST + " coins)");
+        } else {
+            drawButtonDisabled(canvas, cx, buyBtnCy,
+                    "BUY KEY  (" + KEY_COST + " coins)");
+        }
+
+        // BACK button
+        float backBtnCy = cy + screenH * 0.36f;
+        recordButtonRect(shopBackRect, cx, backBtnCy);
+        drawButton(canvas, cx, backBtnCy, "BACK");
     }
 
     private void drawPauseOverlay(Canvas canvas) {
@@ -580,13 +768,32 @@ public class GameView extends SurfaceView implements SurfaceHolder.Callback {
     }
 
     private void drawButton(Canvas canvas, float cx, float cy, String label) {
-        float btnW = screenW * 0.42f;
+        float btnW = screenW * 0.52f;
         float btnH = screenH * 0.075f;
         float cornerRadius = screenH * 0.015f;
         RectF rect = new RectF(cx - btnW / 2, cy - btnH / 2, cx + btnW / 2, cy + btnH / 2);
         canvas.drawRoundRect(rect, cornerRadius, cornerRadius, buttonPaint);
         drawTextFitted(canvas, label, cx, cy + buttonTextPaint.getTextSize() * 0.36f,
                 buttonTextPaint, btnW * 0.9f);
+    }
+
+    private void drawButtonDisabled(Canvas canvas, float cx, float cy, String label) {
+        float btnW = screenW * 0.52f;
+        float btnH = screenH * 0.075f;
+        float cornerRadius = screenH * 0.015f;
+        RectF rect = new RectF(cx - btnW / 2, cy - btnH / 2, cx + btnW / 2, cy + btnH / 2);
+        canvas.drawRoundRect(rect, cornerRadius, cornerRadius, buttonDisabledPaint);
+        Paint dimText = new Paint(buttonTextPaint);
+        dimText.setAlpha(130);
+        drawTextFitted(canvas, label, cx, cy + dimText.getTextSize() * 0.36f,
+                dimText, btnW * 0.9f);
+    }
+
+    /** Stores the bounding rect of a standard button centred at (cx, cy) into {@code out}. */
+    private void recordButtonRect(RectF out, float cx, float cy) {
+        float btnW = screenW * 0.52f;
+        float btnH = screenH * 0.075f;
+        out.set(cx - btnW / 2, cy - btnH / 2, cx + btnW / 2, cy + btnH / 2);
     }
 
     // ══════════════════════════════════════════════════════════════════════════
@@ -596,6 +803,7 @@ public class GameView extends SurfaceView implements SurfaceHolder.Callback {
     @Override
     public boolean onTouchEvent(MotionEvent event) {
         float ex = event.getX();
+        float ey = event.getY();
 
         switch (event.getActionMasked()) {
             case MotionEvent.ACTION_DOWN:
@@ -608,8 +816,26 @@ public class GameView extends SurfaceView implements SurfaceHolder.Callback {
 
             case MotionEvent.ACTION_UP:
             case MotionEvent.ACTION_POINTER_UP:
-                if (gameState == State.MENU || gameState == State.GAME_OVER) {
-                    startGame();
+                if (gameState == State.SHOP) {
+                    // Shop button handling
+                    if (shopBuyKeyRect.contains(ex, ey) && coins >= KEY_COST) {
+                        coins -= KEY_COST;
+                        keys++;
+                    } else if (shopBackRect.contains(ex, ey)) {
+                        gameState = State.MENU;
+                    }
+                } else if (gameState == State.MENU) {
+                    if (openShopRect.contains(ex, ey)) {
+                        gameState = State.SHOP;
+                    } else {
+                        startGame();
+                    }
+                } else if (gameState == State.GAME_OVER) {
+                    if (openShopRect.contains(ex, ey)) {
+                        gameState = State.SHOP;
+                    } else {
+                        startGame();
+                    }
                 } else if (gameState == State.PAUSED) {
                     gameState = State.PLAYING;
                 }
