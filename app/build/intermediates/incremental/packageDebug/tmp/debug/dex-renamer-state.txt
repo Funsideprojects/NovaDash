@@ -1,4 +1,4 @@
-#Thu Apr 09 19:38:04 CEST 2026
+#Thu Apr 09 19:49:58 CEST 2026
 base.0=C\:\\Users\\isakh\\Documents\\SideProsejekt\\fungames\\NovaDash\\app\\build\\intermediates\\dex\\debug\\mergeProjectDexDebug\\0\\classes.dex
 base.1=C\:\\Users\\isakh\\Documents\\SideProsejekt\\fungames\\NovaDash\\app\\build\\intermediates\\dex\\debug\\mergeProjectDexDebug\\12\\classes.dex
 path.0=0/classes.dex
