@@ -52,6 +52,12 @@ public class GameView extends SurfaceView implements SurfaceHolder.Callback {
     /** How long (frames) the "need a key" notification is shown. */
     private static final int NO_KEY_NOTIFY_DURATION = 120; // 2 seconds
 
+    // ── Emoji labels used in UI ────────────────────────────────────────────────
+
+    private static final String EMOJI_COIN = "\uD83E\uDE99"; // 🪙
+    private static final String EMOJI_KEY  = "\uD83D\uDD11"; // 🔑
+    private static final String EMOJI_LOCK = "\uD83D\uDD12"; // 🔒
+
     // ── Game state ─────────────────────────────────────────────────────────────
 
     private enum State { MENU, PLAYING, PAUSED, GAME_OVER, SHOP }
@@ -393,6 +399,8 @@ public class GameView extends SurfaceView implements SurfaceHolder.Callback {
                     if (lives <= 0) {
                         gameState = State.GAME_OVER;
                         if (score > highScore) highScore = (int) score;
+                        // Convert score to coins exactly once at game-over
+                        coins += (int) (score / SCORE_PER_COIN);
                     }
                 }
             }
@@ -467,11 +475,6 @@ public class GameView extends SurfaceView implements SurfaceHolder.Callback {
             Particle p = parti.next();
             p.update();
             if (!p.isActive()) parti.remove();
-        }
-
-        // ── Convert score to coins on game-over ──────────────────────────────
-        if (gameState == State.GAME_OVER) {
-            coins += (int) (score / SCORE_PER_COIN);
         }
     }
 
@@ -605,14 +608,14 @@ public class GameView extends SurfaceView implements SurfaceHolder.Callback {
         // Coins & keys (bottom-right corner)
         float bottomPad = screenH * 0.03f;
         coinHudPaint.setTextAlign(Paint.Align.RIGHT);
-        canvas.drawText("\uD83D\uDD11 " + keys + "  \uD83E\uDE99 " + coins,
+        canvas.drawText(EMOJI_KEY + " " + keys + "  " + EMOJI_COIN + " " + coins,
                 screenW - pad, screenH - bottomPad, coinHudPaint);
 
         // "Need a key!" notification (centred, fades slightly)
         if (noKeyNotifyTimer > 0) {
             int alpha = Math.min(255, noKeyNotifyTimer * 4);
             notifyPaint.setAlpha(alpha);
-            drawTextFitted(canvas, "\uD83D\uDD12 Need a key! Visit the shop.",
+            drawTextFitted(canvas, EMOJI_LOCK + " Need a key! Visit the shop.",
                     screenW / 2f, screenH * 0.45f, notifyPaint, screenW * 0.88f);
         }
     }
@@ -647,7 +650,7 @@ public class GameView extends SurfaceView implements SurfaceHolder.Callback {
 
         // Coins & keys info
         bestPaint.setColor(Color.rgb(215, 170, 35));
-        drawTextFitted(canvas, "\uD83E\uDE99 " + coins + "   \uD83D\uDD11 " + keys,
+        drawTextFitted(canvas, EMOJI_COIN + " " + coins + "   " + EMOJI_KEY + " " + keys,
                 cx, cy + screenH * 0.23f, bestPaint, maxW);
 
         // Play button
@@ -681,7 +684,7 @@ public class GameView extends SurfaceView implements SurfaceHolder.Callback {
 
         // Coins earned this round
         bestPaint.setColor(Color.rgb(215, 170, 35));
-        drawTextFitted(canvas, "\uD83E\uDE99 Coins: " + coins + "   \uD83D\uDD11 Keys: " + keys,
+        drawTextFitted(canvas, EMOJI_COIN + " Coins: " + coins + "   " + EMOJI_KEY + " Keys: " + keys,
                 cx, cy + screenH * 0.13f, bestPaint, maxW);
 
         drawButton(canvas, cx, cy + screenH * 0.22f, "PLAY AGAIN");
@@ -702,11 +705,11 @@ public class GameView extends SurfaceView implements SurfaceHolder.Callback {
 
         // Current coins & keys
         scorePaint.setTextSize(screenH * 0.044f);
-        drawTextFitted(canvas, "\uD83E\uDE99 Coins: " + coins,
+        drawTextFitted(canvas, EMOJI_COIN + " Coins: " + coins,
                 cx, cy - screenH * 0.18f, scorePaint, maxW);
         scorePaint.setTextSize(screenH * 0.052f);
 
-        drawTextFitted(canvas, "\uD83D\uDD11 Keys:  " + keys,
+        drawTextFitted(canvas, EMOJI_KEY + " Keys:  " + keys,
                 cx, cy - screenH * 0.10f, scorePaint, maxW);
 
         // Divider
@@ -719,7 +722,7 @@ public class GameView extends SurfaceView implements SurfaceHolder.Callback {
 
         // Item description
         subtitlePaint.setColor(Color.rgb(190, 225, 255));
-        drawTextFitted(canvas, "\uD83D\uDD11 Key  –  " + KEY_COST + " coins",
+        drawTextFitted(canvas, EMOJI_KEY + " Key  \u2013  " + KEY_COST + " coins",
                 cx, cy + screenH * 0.04f, subtitlePaint, maxW);
         legendPaint.setColor(Color.rgb(160, 200, 255));
         drawTextFitted(canvas, "Use keys to open locked chests mid-round.",
@@ -730,10 +733,10 @@ public class GameView extends SurfaceView implements SurfaceHolder.Callback {
         float buyBtnCy = cy + screenH * 0.21f;
         recordButtonRect(shopBuyKeyRect, cx, buyBtnCy);
         if (canBuy) {
-            drawButton(canvas, cx, buyBtnCy, "BUY KEY  (" + KEY_COST + " coins)");
+            drawButton(canvas, cx, buyBtnCy, "BUY " + EMOJI_KEY + "  (" + KEY_COST + " coins)");
         } else {
             drawButtonDisabled(canvas, cx, buyBtnCy,
-                    "BUY KEY  (" + KEY_COST + " coins)");
+                    "BUY " + EMOJI_KEY + "  (" + KEY_COST + " coins)");
         }
 
         // BACK button
