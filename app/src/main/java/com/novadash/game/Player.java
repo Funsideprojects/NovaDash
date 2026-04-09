@@ -114,6 +114,7 @@ public class Player {
 
     public float getX() { return x; }
     public float getY() { return y; }
+    public float getTopY() { return y - halfH; }
 
     /** Effective collision radius (slightly tighter than visual for fairness). */
     public float getCollisionRadius() { return halfW * 0.9f; }
