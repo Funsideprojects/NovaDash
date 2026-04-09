@@ -23,9 +23,14 @@ import java.util.Random;
  *  • Meteors fall from the top and must be avoided.
  *  • Power-ups also fall and should be collected:
  *      [S]  Shield     – invincibility bubble (5 s)
- *      [T]  Slow Time  – halves meteor speed  (5 s)
+ *      [SK] Skjold     – extended shield (7.5 s)
+ *      [T]  Slow Time  – halves meteor speed (5 s)
  *      [♥]  Extra Life – adds one life (max 5)
- *      [2x] Score Boost – doubles score gain  (5 s)
+ *      [2x] Score Boost – doubles score gain (5 s)
+ *      [L]  Laser      – continuous beam destroys meteors (5 s)
+ *      [P]  Pistol     – auto-fires bullets (5 s)
+ *      [→]  Boost      – clears all meteors + 3 s invincibility
+ *      [¢]  Coins      – instant +500 score
  *  • The game speeds up every 10 seconds.
  *  • Three lives; losing all ends the game.
  */
@@ -67,6 +72,7 @@ public class GameView extends SurfaceView implements SurfaceHolder.Callback {
     private final List<Meteor>   meteors   = new ArrayList<>();
     private final List<PowerUp>  powerUps  = new ArrayList<>();
     private final List<Particle> particles = new ArrayList<>();
+    private final List<Bullet>   bullets   = new ArrayList<>();
 
     // ── Scoring / lives ────────────────────────────────────────────────────────
 
@@ -79,6 +85,8 @@ public class GameView extends SurfaceView implements SurfaceHolder.Callback {
     private int shieldTimer;
     private int slowTimer;
     private int scoreBoostTimer;
+    private int laserTimer;
+    private int pistolTimer;
 
     // ── Difficulty / spawn ─────────────────────────────────────────────────────
 
@@ -112,6 +120,8 @@ public class GameView extends SurfaceView implements SurfaceHolder.Callback {
     private Paint livesPaint;
     private Paint puHudPaint;
     private Paint overlayPaint;
+    private Paint laserPaint;
+    private Paint laserGlowPaint;
 
     // ══════════════════════════════════════════════════════════════════════════
     // Construction / Surface lifecycle
@@ -221,6 +231,14 @@ public class GameView extends SurfaceView implements SurfaceHolder.Callback {
 
         overlayPaint = new Paint();
         overlayPaint.setColor(Color.argb(160, 0, 0, 10));
+
+        laserPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        laserPaint.setColor(Color.rgb(255, 60, 60));
+        laserPaint.setStyle(Paint.Style.FILL);
+
+        laserGlowPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        laserGlowPaint.setColor(Color.argb(80, 255, 80, 80));
+        laserGlowPaint.setStyle(Paint.Style.FILL);
     }
 
     private static Paint makePaint(int color, float textSize, Paint.Align align, boolean bold) {
@@ -261,6 +279,8 @@ public class GameView extends SurfaceView implements SurfaceHolder.Callback {
         shieldTimer      = 0;
         slowTimer        = 0;
         scoreBoostTimer  = 0;
+        laserTimer       = 0;
+        pistolTimer      = 0;
         invincibleFrames = 0;
         touchX           = screenW / 2f;
 
@@ -315,6 +335,11 @@ public class GameView extends SurfaceView implements SurfaceHolder.Callback {
             powerUps.add(new PowerUp(screenW, screenH));
         }
 
+        // ── Spawn pistol bullets ──────────────────────────────────────────────
+        if (pistolTimer > 0 && frameCount % 25 == 0) {
+            bullets.add(new Bullet(player.getX(), player.getTopY(), screenH));
+        }
+
         float slowFactor = (slowTimer > 0) ? 0.4f : 1.0f;
 
         // ── Update & check meteors ───────────────────────────────────────────
@@ -351,6 +376,22 @@ public class GameView extends SurfaceView implements SurfaceHolder.Callback {
             }
         }
 
+        // ── Laser: destroy meteors in beam path ──────────────────────────────
+        if (laserTimer > 0) {
+            float laserX = player.getX();
+            float laserHalfW = player.getCollisionRadius() * 0.7f;
+            Iterator<Meteor> lmi = meteors.iterator();
+            while (lmi.hasNext()) {
+                Meteor m = lmi.next();
+                if (m.getY() < player.getY()
+                        && Math.abs(m.getX() - laserX) < laserHalfW + m.getRadius()) {
+                    spawnParticles(m.getX(), m.getY(), Color.rgb(255, 80, 60), 6);
+                    score += 15;
+                    lmi.remove();
+                }
+            }
+        }
+
         // ── Update & collect power-ups ───────────────────────────────────────
         Iterator<PowerUp> pi = powerUps.iterator();
         while (pi.hasNext()) {
@@ -370,6 +411,32 @@ public class GameView extends SurfaceView implements SurfaceHolder.Callback {
             }
         }
 
+        // ── Update bullets (PISTOL) ───────────────────────────────────────────
+        Iterator<Bullet> bi = bullets.iterator();
+        while (bi.hasNext()) {
+            Bullet b = bi.next();
+            b.update();
+            if (!b.isActive()) {
+                bi.remove();
+                continue;
+            }
+            boolean hit = false;
+            Iterator<Meteor> bmi = meteors.iterator();
+            while (bmi.hasNext()) {
+                Meteor m = bmi.next();
+                float dx = b.getX() - m.getX();
+                float dy = b.getY() - m.getY();
+                if ((float) Math.sqrt(dx * dx + dy * dy) < b.getRadius() + m.getRadius()) {
+                    spawnParticles(m.getX(), m.getY(), Color.rgb(255, 200, 50), 6);
+                    score += 20;
+                    bmi.remove();
+                    hit = true;
+                    break;
+                }
+            }
+            if (hit) bi.remove();
+        }
+
         // ── Tick power-up timers ─────────────────────────────────────────────
         if (shieldTimer > 0) {
             shieldTimer--;
@@ -379,6 +446,8 @@ public class GameView extends SurfaceView implements SurfaceHolder.Callback {
         }
         if (slowTimer      > 0) slowTimer--;
         if (scoreBoostTimer > 0) scoreBoostTimer--;
+        if (laserTimer     > 0) laserTimer--;
+        if (pistolTimer    > 0) pistolTimer--;
         if (invincibleFrames > 0) invincibleFrames--;
 
         // ── Particles ────────────────────────────────────────────────────────
@@ -403,6 +472,28 @@ public class GameView extends SurfaceView implements SurfaceHolder.Callback {
                 break;
             case SCORE_BOOST:
                 scoreBoostTimer = POWERUP_DURATION;
+                break;
+            case SKJOLD:
+                // Extended shield – 7.5 seconds instead of 5
+                shieldTimer = (int) (POWERUP_DURATION * 1.5f);
+                break;
+            case LASER:
+                laserTimer = POWERUP_DURATION;
+                break;
+            case PISTOL:
+                pistolTimer = POWERUP_DURATION;
+                break;
+            case BOOST:
+                // Clear all current meteors and grant brief invincibility
+                for (Meteor m : meteors) {
+                    spawnParticles(m.getX(), m.getY(), Color.rgb(0, 215, 255), 6);
+                    score += 10;
+                }
+                meteors.clear();
+                invincibleFrames = Math.max(invincibleFrames, 180);
+                break;
+            case COINS:
+                score += 500;
                 break;
         }
     }
@@ -457,6 +548,17 @@ public class GameView extends SurfaceView implements SurfaceHolder.Callback {
     private void drawGameObjects(Canvas canvas) {
         for (Meteor  m  : meteors)  m.draw(canvas);
         for (PowerUp pu : powerUps) pu.draw(canvas);
+        for (Bullet  b  : bullets)  b.draw(canvas);
+
+        // Laser beam (drawn behind the player ship)
+        if (laserTimer > 0) {
+            float px      = player.getX();
+            float py      = player.getTopY();
+            float halfW   = player.getCollisionRadius() * 0.35f;
+            laserGlowPaint.setAlpha(70 + rng.nextInt(40));
+            canvas.drawRect(px - halfW * 3f, 0, px + halfW * 3f, py, laserGlowPaint);
+            canvas.drawRect(px - halfW, 0, px + halfW, py, laserPaint);
+        }
 
         // Player flickers during post-hit invincibility
         boolean showPlayer = (invincibleFrames <= 0) || (invincibleFrames % 10 < 6);
@@ -497,6 +599,16 @@ public class GameView extends SurfaceView implements SurfaceHolder.Callback {
         if (scoreBoostTimer > 0) {
             puHudPaint.setColor(Color.rgb(60, 240, 100));
             canvas.drawText("2x SCORE " + secondsLeft(scoreBoostTimer) + "s", pad, puY, puHudPaint);
+            puY += screenH * 0.034f;
+        }
+        if (laserTimer > 0) {
+            puHudPaint.setColor(Color.rgb(255, 80, 60));
+            canvas.drawText("LASER   " + secondsLeft(laserTimer) + "s", pad, puY, puHudPaint);
+            puY += screenH * 0.034f;
+        }
+        if (pistolTimer > 0) {
+            puHudPaint.setColor(Color.rgb(255, 140, 30));
+            canvas.drawText("PISTOL  " + secondsLeft(pistolTimer) + "s", pad, puY, puHudPaint);
         }
     }
 
@@ -518,17 +630,19 @@ public class GameView extends SurfaceView implements SurfaceHolder.Callback {
         drawTextFitted(canvas, "Drag your finger to steer the ship.",
                 cx, cy - screenH * 0.04f, subtitlePaint, maxW);
 
-        drawTextFitted(canvas, "[S] Shield   [T] Slow Time",
-                cx, cy + screenH * 0.03f, legendPaint, maxW);
-        drawTextFitted(canvas, "[\u2665] Extra Life   [2x] Score Boost",
-                cx, cy + screenH * 0.09f, legendPaint, maxW);
+        drawTextFitted(canvas, "[S] Shield  [SK] Skjold  [T] Slow  [\u2665] Life",
+                cx, cy + screenH * 0.02f, legendPaint, maxW);
+        drawTextFitted(canvas, "[2x] Score  [L] Laser  [P] Pistol",
+                cx, cy + screenH * 0.08f, legendPaint, maxW);
+        drawTextFitted(canvas, "[\u2192] Boost  [\u00a2] Coins",
+                cx, cy + screenH * 0.13f, legendPaint, maxW);
 
         if (highScore > 0) {
             bestPaint.setColor(Color.rgb(255, 220, 80));
-            drawTextFitted(canvas, "BEST: " + highScore, cx, cy + screenH * 0.16f, bestPaint, maxW);
+            drawTextFitted(canvas, "BEST: " + highScore, cx, cy + screenH * 0.20f, bestPaint, maxW);
         }
 
-        drawButton(canvas, cx, cy + screenH * 0.27f, "TAP TO PLAY");
+        drawButton(canvas, cx, cy + screenH * 0.30f, "TAP TO PLAY");
     }
 
     private void drawGameOverOverlay(Canvas canvas) {

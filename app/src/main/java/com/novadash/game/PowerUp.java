@@ -15,10 +15,16 @@ import java.util.Random;
  *  SLOW_TIME   – halves meteor speed for a few seconds (yellow)
  *  EXTRA_LIFE  – restores one life (red/heart)
  *  SCORE_BOOST – doubles score gain for a few seconds (green)
+ *  SKJOLD      – extended shield (Norwegian for "shield"; purple; 7.5 s)
+ *  LASER       – continuous laser beam destroys meteors (red; 5 s)
+ *  PISTOL      – auto-fires bullets that destroy meteors (orange; 5 s)
+ *  BOOST       – instantly clears all meteors + 3 s invincibility (cyan)
+ *  COINS       – immediate +500 score bonus (gold)
  */
 public class PowerUp {
 
-    public enum Type { SHIELD, SLOW_TIME, EXTRA_LIFE, SCORE_BOOST }
+    public enum Type { SHIELD, SLOW_TIME, EXTRA_LIFE, SCORE_BOOST,
+                       SKJOLD, LASER, PISTOL, BOOST, COINS }
 
     private float x, y;
     private final float radius;
@@ -69,6 +75,31 @@ public class PowerUp {
                 baseColor = Color.rgb(30, 200, 80);
                 lightColor = Color.rgb(80, 255, 130);
                 icon = "2x";
+                break;
+            case SKJOLD:
+                baseColor = Color.rgb(130, 20, 210);
+                lightColor = Color.rgb(190, 90, 255);
+                icon = "SK";
+                break;
+            case LASER:
+                baseColor = Color.rgb(210, 20, 20);
+                lightColor = Color.rgb(255, 80, 60);
+                icon = "L";
+                break;
+            case PISTOL:
+                baseColor = Color.rgb(200, 80, 0);
+                lightColor = Color.rgb(255, 140, 30);
+                icon = "P";
+                break;
+            case BOOST:
+                baseColor = Color.rgb(0, 170, 200);
+                lightColor = Color.rgb(40, 215, 255);
+                icon = "\u2192"; // →
+                break;
+            case COINS:
+                baseColor = Color.rgb(185, 130, 0);
+                lightColor = Color.rgb(235, 180, 30);
+                icon = "\u00a2"; // ¢
                 break;
         }
 
