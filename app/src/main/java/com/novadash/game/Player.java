@@ -12,9 +12,12 @@ import android.graphics.Path;
 public class Player {
 
     private float x;
+    private float targetX;
     private final float y;
     private final float halfW;    // half the visual width  (used for clamping + hitbox)
     private final float halfH;    // half the visual height
+    /** Lerp factor controlling how fast x closes toward targetX (0.4 base → 1.0 at level 5). */
+    private final float lerpFactor;
 
     private final Paint bodyPaint;
     private final Paint wingPaint;
@@ -25,12 +28,17 @@ public class Player {
     private boolean shielded;
     private int engineFlicker;  // simple engine glow animation counter
 
-    public Player(int screenWidth, int screenHeight) {
+    /**
+     * @param speedLevel 0–5 ship speed upgrade level; higher → snappier response.
+     */
+    public Player(int screenWidth, int screenHeight, int speedLevel) {
         halfW = screenWidth * 0.055f;
         halfH = halfW * 1.6f;
 
         x = screenWidth / 2f;
+        targetX = x;
         y = screenHeight - halfH - screenHeight * 0.06f;
+        lerpFactor = Math.min(1.0f, 0.4f + speedLevel * 0.12f);
 
         bodyPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
         bodyPaint.setColor(Color.rgb(80, 190, 255));
@@ -54,13 +62,18 @@ public class Player {
     }
 
     /**
-     * Move the ship to the given X coordinate, clamped inside the screen.
+     * Set the desired X position; the ship will lerp towards it each update.
      */
     public void setTargetX(float targetX, int screenWidth) {
-        x = Math.max(halfW, Math.min(targetX, screenWidth - halfW));
+        this.targetX = Math.max(halfW, Math.min(targetX, screenWidth - halfW));
     }
 
     public void update() {
+        if (lerpFactor >= 1.0f) {
+            x = targetX;
+        } else {
+            x += (targetX - x) * lerpFactor;
+        }
         engineFlicker = (engineFlicker + 1) % 12;
     }
 
