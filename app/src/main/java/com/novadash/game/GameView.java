@@ -1,6 +1,7 @@
 package com.novadash.game;
 
 import android.content.Context;
+import android.content.SharedPreferences;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
@@ -28,6 +29,8 @@ import java.util.Random;
  *      [2x] Score Boost – doubles score gain  (5 s)
  *  • The game speeds up every 10 seconds.
  *  • Three lives; losing all ends the game.
+ *  • A shop lets players spend coins on consumables (Revive, Key) and
+ *    permanent ship upgrades (Speed, Resistance, Duration).
  */
 public class GameView extends SurfaceView implements SurfaceHolder.Callback {
 
@@ -43,7 +46,7 @@ public class GameView extends SurfaceView implements SurfaceHolder.Callback {
 
     // ── Game state ─────────────────────────────────────────────────────────────
 
-    private enum State { MENU, PLAYING, PAUSED, GAME_OVER }
+    private enum State { MENU, PLAYING, PAUSED, GAME_OVER, SHOP }
     private volatile State gameState = State.MENU;
 
     // ── Screen ─────────────────────────────────────────────────────────────────
@@ -73,6 +76,51 @@ public class GameView extends SurfaceView implements SurfaceHolder.Callback {
     private long score;
     private int  lives;
     private int  highScore;
+
+    // ── Shop / progression ─────────────────────────────────────────────────────
+
+    /** Persistent coin balance. */
+    private int coins;
+    /** Coins earned in the current run (shown on game over). */
+    private int coinsThisRun;
+    /**
+     * Score at which coins were last calculated. Used to award only incremental
+     * coins when a player revives mid-run, preventing coin-farming exploits.
+     */
+    private long coinsBaseScore;
+    /** 0–5: increases ship movement responsiveness. */
+    private int speedUpgradeLevel;
+    /** 0–5: adds one extra starting life per level. */
+    private int resistanceUpgradeLevel;
+    /** 0–5: extends power-up durations by 20 % per level. */
+    private int durationUpgradeLevel;
+    /** Consumable revives in inventory (max 5). */
+    private int reviveCount;
+    /** Consumable keys in inventory (max 10). */
+    private int keyCount;
+    /** State to return to when leaving the shop. */
+    private State shopReturnState = State.MENU;
+
+    // ── Shop UI ────────────────────────────────────────────────────────────────
+
+    private static final int SHOP_REVIVE     = 0;
+    private static final int SHOP_KEY        = 1;
+    private static final int SHOP_SPEED      = 2;
+    private static final int SHOP_RESISTANCE = 3;
+    private static final int SHOP_DURATION   = 4;
+    private static final int SHOP_ITEM_COUNT = 5;
+
+    private final RectF[] shopItemRects = new RectF[SHOP_ITEM_COUNT];
+
+    // ── Button hit-rects (updated every draw, read by touch handler) ───────────
+
+    private final RectF playAgainBtnRect = new RectF();
+    private final RectF shopBtnRect      = new RectF();
+    private final RectF reviveBtnRect    = new RectF();
+    private final RectF backBtnRect      = new RectF();
+    private final RectF playBtnRect      = new RectF();
+    /** HUD button to use a key during gameplay. */
+    private final RectF keyBtnRect       = new RectF();
 
     // ── Power-up timers (in frames) ────────────────────────────────────────────
 
@@ -113,6 +161,15 @@ public class GameView extends SurfaceView implements SurfaceHolder.Callback {
     private Paint puHudPaint;
     private Paint overlayPaint;
 
+    // ── Shop-specific paints ───────────────────────────────────────────────────
+
+    private Paint shopItemBgPaint;
+    private Paint shopItemNamePaint;
+    private Paint shopItemDescPaint;
+    private Paint shopCostPaint;
+    private Paint shopMaxPaint;
+    private Paint shopIconPaint;
+
     // ══════════════════════════════════════════════════════════════════════════
     // Construction / Surface lifecycle
     // ══════════════════════════════════════════════════════════════════════════
@@ -121,6 +178,10 @@ public class GameView extends SurfaceView implements SurfaceHolder.Callback {
         super(context);
         getHolder().addCallback(this);
         setFocusable(true);
+        loadProgress();
+        for (int i = 0; i < SHOP_ITEM_COUNT; i++) {
+            shopItemRects[i] = new RectF();
+        }
     }
 
     @Override
@@ -221,6 +282,16 @@ public class GameView extends SurfaceView implements SurfaceHolder.Callback {
 
         overlayPaint = new Paint();
         overlayPaint.setColor(Color.argb(160, 0, 0, 10));
+
+        // Shop paints
+        shopItemBgPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        shopItemBgPaint.setStyle(Paint.Style.FILL);
+
+        shopItemNamePaint = makePaint(Color.WHITE, screenH * 0.032f, Paint.Align.LEFT, true);
+        shopItemDescPaint = makePaint(Color.rgb(180, 200, 230), screenH * 0.022f, Paint.Align.LEFT, false);
+        shopCostPaint     = makePaint(Color.rgb(255, 220, 60), screenH * 0.028f, Paint.Align.RIGHT, true);
+        shopMaxPaint      = makePaint(Color.rgb(100, 255, 120), screenH * 0.028f, Paint.Align.RIGHT, true);
+        shopIconPaint     = makePaint(Color.WHITE, screenH * 0.040f, Paint.Align.CENTER, true);
     }
 
     private static Paint makePaint(int color, float textSize, Paint.Align align, boolean bold) {
@@ -248,13 +319,15 @@ public class GameView extends SurfaceView implements SurfaceHolder.Callback {
     }
 
     private void startGame() {
-        player = new Player(screenW, screenH);
+        player = new Player(screenW, screenH, speedUpgradeLevel);
         meteors.clear();
         powerUps.clear();
         particles.clear();
 
         score            = 0;
-        lives            = 3;
+        coinsThisRun     = 0;
+        coinsBaseScore   = 0;
+        lives            = 3 + resistanceUpgradeLevel;
         frameCount       = 0;
         difficulty       = 1.0f;
         meteorInterval   = 60;
@@ -265,6 +338,44 @@ public class GameView extends SurfaceView implements SurfaceHolder.Callback {
         touchX           = screenW / 2f;
 
         gameState = State.PLAYING;
+    }
+
+    /** Duration (frames) for timed power-ups, extended by the duration upgrade level. */
+    private int powerUpDuration() {
+        return (int)(POWERUP_DURATION * (1.0f + durationUpgradeLevel * 0.2f));
+    }
+
+    private static final String PREFS_NAME       = "novadash";
+    private static final String PREF_HIGH_SCORE  = "high_score";
+    private static final String PREF_COINS       = "coins";
+    private static final String PREF_SPEED_LVL   = "speed_level";
+    private static final String PREF_RESIST_LVL  = "resistance_level";
+    private static final String PREF_DURATION_LVL= "duration_level";
+    private static final String PREF_REVIVES     = "revives";
+    private static final String PREF_KEYS        = "keys";
+
+    private void loadProgress() {
+        SharedPreferences prefs = getContext().getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+        highScore            = prefs.getInt(PREF_HIGH_SCORE, 0);
+        coins                = prefs.getInt(PREF_COINS, 0);
+        speedUpgradeLevel    = prefs.getInt(PREF_SPEED_LVL, 0);
+        resistanceUpgradeLevel = prefs.getInt(PREF_RESIST_LVL, 0);
+        durationUpgradeLevel = prefs.getInt(PREF_DURATION_LVL, 0);
+        reviveCount          = prefs.getInt(PREF_REVIVES, 0);
+        keyCount             = prefs.getInt(PREF_KEYS, 0);
+    }
+
+    private void saveProgress() {
+        SharedPreferences.Editor ed = getContext()
+                .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit();
+        ed.putInt(PREF_HIGH_SCORE,   highScore);
+        ed.putInt(PREF_COINS,        coins);
+        ed.putInt(PREF_SPEED_LVL,    speedUpgradeLevel);
+        ed.putInt(PREF_RESIST_LVL,   resistanceUpgradeLevel);
+        ed.putInt(PREF_DURATION_LVL, durationUpgradeLevel);
+        ed.putInt(PREF_REVIVES,      reviveCount);
+        ed.putInt(PREF_KEYS,         keyCount);
+        ed.apply();
     }
 
     // ══════════════════════════════════════════════════════════════════════════
@@ -344,8 +455,13 @@ public class GameView extends SurfaceView implements SurfaceHolder.Callback {
                     lives--;
                     invincibleFrames = HIT_INVINCIBLE;
                     if (lives <= 0) {
-                        gameState = State.GAME_OVER;
+                        int earned = (int)((score - coinsBaseScore) / 50);
+                        coinsBaseScore = score;
+                        coinsThisRun += earned;
+                        coins += earned;
                         if (score > highScore) highScore = (int) score;
+                        saveProgress();
+                        gameState = State.GAME_OVER;
                     }
                 }
             }
@@ -391,18 +507,19 @@ public class GameView extends SurfaceView implements SurfaceHolder.Callback {
     }
 
     private void applyPowerUp(PowerUp pu) {
+        int duration = powerUpDuration();
         switch (pu.getType()) {
             case SHIELD:
-                shieldTimer = POWERUP_DURATION;
+                shieldTimer = duration;
                 break;
             case SLOW_TIME:
-                slowTimer = POWERUP_DURATION;
+                slowTimer = duration;
                 break;
             case EXTRA_LIFE:
-                lives = Math.min(lives + 1, 5);
+                lives = Math.min(lives + 1, 5 + resistanceUpgradeLevel);
                 break;
             case SCORE_BOOST:
-                scoreBoostTimer = POWERUP_DURATION;
+                scoreBoostTimer = duration;
                 break;
         }
     }
@@ -451,6 +568,9 @@ public class GameView extends SurfaceView implements SurfaceHolder.Callback {
                 drawHUD(canvas);
                 drawGameOverOverlay(canvas);
                 break;
+            case SHOP:
+                drawShop(canvas);
+                break;
         }
     }
 
@@ -474,7 +594,7 @@ public class GameView extends SurfaceView implements SurfaceHolder.Callback {
         canvas.drawText(scoreStr, pad + shadowOff, topY + shadowOff, hudShadowPaint);
         canvas.drawText(scoreStr, pad, topY, hudPaint);
 
-        // Lives (right) — up to 5 hearts
+        // Lives (right) — up to (5 + resistanceLevel) hearts
         StringBuilder hearts = new StringBuilder();
         for (int i = 0; i < lives; i++) {
             if (i > 0) hearts.append(' ');
@@ -498,6 +618,35 @@ public class GameView extends SurfaceView implements SurfaceHolder.Callback {
             puHudPaint.setColor(Color.rgb(60, 240, 100));
             canvas.drawText("2x SCORE " + secondsLeft(scoreBoostTimer) + "s", pad, puY, puHudPaint);
         }
+
+        // Consumable inventory — top-right, below hearts
+        float invY = topY + screenH * 0.045f;
+        puHudPaint.setTextAlign(Paint.Align.RIGHT);
+        if (reviveCount > 0) {
+            puHudPaint.setColor(Color.rgb(255, 80, 110));
+            canvas.drawText("\u2665 " + reviveCount, screenW - pad, invY, puHudPaint);
+            invY += screenH * 0.034f;
+        }
+        if (keyCount > 0) {
+            // Draw KEY button (tappable)
+            float btnH = screenH * 0.055f;
+            float btnW = screenW * 0.24f;
+            float btnX = screenW - pad - btnW;
+            float btnCY = invY + btnH / 2f;
+            keyBtnRect.set(btnX, invY, btnX + btnW, invY + btnH);
+            Paint keyBg = new Paint(Paint.ANTI_ALIAS_FLAG);
+            keyBg.setColor(Color.argb(200, 180, 130, 20));
+            keyBg.setStyle(Paint.Style.FILL);
+            canvas.drawRoundRect(keyBtnRect, btnH * 0.25f, btnH * 0.25f, keyBg);
+            puHudPaint.setColor(Color.rgb(255, 215, 60));
+            puHudPaint.setTextAlign(Paint.Align.CENTER);
+            canvas.drawText("\uD83D\uDD11 KEY x" + keyCount,
+                    btnX + btnW / 2f, btnCY + puHudPaint.getTextSize() * 0.36f, puHudPaint);
+            puHudPaint.setTextAlign(Paint.Align.RIGHT);
+        } else {
+            keyBtnRect.setEmpty();
+        }
+        puHudPaint.setTextAlign(Paint.Align.LEFT);
     }
 
     private static int secondsLeft(int frames) {
@@ -528,7 +677,12 @@ public class GameView extends SurfaceView implements SurfaceHolder.Callback {
             drawTextFitted(canvas, "BEST: " + highScore, cx, cy + screenH * 0.16f, bestPaint, maxW);
         }
 
-        drawButton(canvas, cx, cy + screenH * 0.27f, "TAP TO PLAY");
+        // Coin balance
+        bestPaint.setColor(Color.rgb(255, 215, 60));
+        drawTextFitted(canvas, "\u2605 " + coins + " coins", cx, cy + screenH * 0.22f, bestPaint, maxW);
+
+        drawButton(canvas, cx - screenW * 0.24f, cy + screenH * 0.31f, "PLAY", playBtnRect);
+        drawButton(canvas, cx + screenW * 0.24f, cy + screenH * 0.31f, "SHOP", shopBtnRect);
     }
 
     private void drawGameOverOverlay(Canvas canvas) {
@@ -539,19 +693,36 @@ public class GameView extends SurfaceView implements SurfaceHolder.Callback {
 
         float maxW = screenW * 0.92f;
 
-        drawTextFitted(canvas, "GAME OVER", cx, cy - screenH * 0.12f, gameOverPaint, maxW);
-        drawTextFitted(canvas, "Score: " + score, cx, cy - screenH * 0.01f, scorePaint, maxW);
+        drawTextFitted(canvas, "GAME OVER", cx, cy - screenH * 0.14f, gameOverPaint, maxW);
+        drawTextFitted(canvas, "Score: " + score, cx, cy - screenH * 0.03f, scorePaint, maxW);
+
+        // Coins earned this run
+        bestPaint.setColor(Color.rgb(255, 215, 60));
+        drawTextFitted(canvas, "+" + coinsThisRun + " coins  (\u2605 " + coins + " total)",
+                cx, cy + screenH * 0.04f, bestPaint, maxW);
 
         if (score >= highScore && highScore > 0) {
             Paint newBest = new Paint(scorePaint);
             newBest.setColor(Color.rgb(255, 200, 50));
             newBest.setTextSize(screenH * 0.038f);
-            drawTextFitted(canvas, "NEW BEST!", cx, cy + screenH * 0.06f, newBest, maxW);
+            drawTextFitted(canvas, "NEW BEST!", cx, cy + screenH * 0.10f, newBest, maxW);
         } else if (highScore > 0) {
-            drawTextFitted(canvas, "Best: " + highScore, cx, cy + screenH * 0.06f, bestPaint, maxW);
+            drawTextFitted(canvas, "Best: " + highScore, cx, cy + screenH * 0.10f, bestPaint, maxW);
         }
 
-        drawButton(canvas, cx, cy + screenH * 0.18f, "PLAY AGAIN");
+        float btnY = cy + screenH * 0.20f;
+        if (reviveCount > 0) {
+            // Revive button (green)
+            Paint revivePaint = new Paint(buttonPaint);
+            revivePaint.setColor(Color.rgb(30, 160, 60));
+            drawButtonColored(canvas, cx, btnY, "REVIVE (" + reviveCount + ")", revivePaint, reviveBtnRect);
+            btnY += screenH * 0.105f;
+        } else {
+            reviveBtnRect.setEmpty();
+        }
+
+        drawButton(canvas, cx - screenW * 0.24f, btnY, "PLAY AGAIN", playAgainBtnRect);
+        drawButton(canvas, cx + screenW * 0.24f, btnY, "SHOP", shopBtnRect);
     }
 
     private void drawPauseOverlay(Canvas canvas) {
@@ -580,13 +751,176 @@ public class GameView extends SurfaceView implements SurfaceHolder.Callback {
     }
 
     private void drawButton(Canvas canvas, float cx, float cy, String label) {
+        drawButton(canvas, cx, cy, label, null);
+    }
+
+    private void drawButton(Canvas canvas, float cx, float cy, String label, RectF outRect) {
+        drawButtonColored(canvas, cx, cy, label, buttonPaint, outRect);
+    }
+
+    private void drawButtonColored(Canvas canvas, float cx, float cy, String label,
+                                   Paint bgPaint2, RectF outRect) {
         float btnW = screenW * 0.42f;
         float btnH = screenH * 0.075f;
         float cornerRadius = screenH * 0.015f;
         RectF rect = new RectF(cx - btnW / 2, cy - btnH / 2, cx + btnW / 2, cy + btnH / 2);
-        canvas.drawRoundRect(rect, cornerRadius, cornerRadius, buttonPaint);
+        if (outRect != null) outRect.set(rect);
+        canvas.drawRoundRect(rect, cornerRadius, cornerRadius, bgPaint2);
         drawTextFitted(canvas, label, cx, cy + buttonTextPaint.getTextSize() * 0.36f,
                 buttonTextPaint, btnW * 0.9f);
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // Shop
+    // ══════════════════════════════════════════════════════════════════════════
+
+    /** Icon characters for each shop item. */
+    private static final String[] SHOP_ICONS = { "\u2665", "\uD83D\uDD11", "\u26A1", "\u2764", "\u23F1" };
+    /** Display names for each shop item. */
+    private static final String[] SHOP_NAMES = { "Revive", "Key", "Speed", "Resistance", "Duration" };
+    /** Short descriptions for each shop item. */
+    private static final String[] SHOP_DESC  = {
+        "Continue with 1 life",
+        "Spawn a power-up",
+        "Snappier ship control",
+        "+1 starting life",
+        "Longer power-ups"
+    };
+    /** Background accent colors per shop item. */
+    private static final int[] SHOP_COLORS = {
+        Color.rgb(160, 30,  70),   // red   – revive
+        Color.rgb(140, 110,  0),   // gold  – key
+        Color.rgb(20,  100, 200),  // blue  – speed
+        Color.rgb(20,  140,  60),  // green – resistance
+        Color.rgb(120,  30, 180)   // purple– duration
+    };
+
+    private int shopItemCurrentLevel(int id) {
+        switch (id) {
+            case SHOP_REVIVE:     return reviveCount;
+            case SHOP_KEY:        return keyCount;
+            case SHOP_SPEED:      return speedUpgradeLevel;
+            case SHOP_RESISTANCE: return resistanceUpgradeLevel;
+            case SHOP_DURATION:   return durationUpgradeLevel;
+        }
+        return 0;
+    }
+
+    private int shopItemMaxLevel(int id) {
+        switch (id) {
+            case SHOP_REVIVE: return 5;
+            case SHOP_KEY:    return 10;
+            default:          return 5;  // upgrades 0-5
+        }
+    }
+
+    private int shopItemCost(int id) {
+        int level = shopItemCurrentLevel(id);
+        switch (id) {
+            case SHOP_REVIVE:     return 50;
+            case SHOP_KEY:        return 30;
+            case SHOP_SPEED:      return 100 * (level + 1);
+            case SHOP_RESISTANCE: return 100 * (level + 1);
+            case SHOP_DURATION:   return 100 * (level + 1);
+        }
+        return 0;
+    }
+
+    private boolean shopItemIsMax(int id) {
+        return shopItemCurrentLevel(id) >= shopItemMaxLevel(id);
+    }
+
+    /** Attempt to purchase item; returns true if successful. */
+    private boolean buyShopItem(int id) {
+        if (shopItemIsMax(id)) return false;
+        int cost = shopItemCost(id);
+        if (coins < cost) return false;
+        coins -= cost;
+        switch (id) {
+            case SHOP_REVIVE:     reviveCount          = Math.min(reviveCount + 1, 5); break;
+            case SHOP_KEY:        keyCount             = Math.min(keyCount + 1, 10);   break;
+            case SHOP_SPEED:      speedUpgradeLevel++; break;
+            case SHOP_RESISTANCE: resistanceUpgradeLevel++; break;
+            case SHOP_DURATION:   durationUpgradeLevel++;   break;
+        }
+        saveProgress();
+        return true;
+    }
+
+    private void drawShop(Canvas canvas) {
+        float cx  = screenW / 2f;
+        float pad = screenW * 0.04f;
+        float maxW = screenW * 0.92f;
+
+        // Title
+        drawTextFitted(canvas, "SHOP", cx, screenH * 0.09f, titlePaint, maxW);
+
+        // Coin balance
+        scorePaint.setColor(Color.rgb(255, 215, 60));
+        drawTextFitted(canvas, "\u2605 " + coins + " coins", cx, screenH * 0.155f, scorePaint, maxW);
+        scorePaint.setColor(Color.rgb(255, 220, 80)); // restore
+
+        // Item list
+        float itemH  = screenH * 0.108f;
+        float gap    = screenH * 0.016f;
+        float startY = screenH * 0.195f;
+        float itemW  = screenW - 2 * pad;
+
+        for (int i = 0; i < SHOP_ITEM_COUNT; i++) {
+            float y = startY + i * (itemH + gap);
+            drawShopItem(canvas, pad, y, itemW, itemH, i);
+        }
+
+        // Back button
+        drawButton(canvas, cx, screenH * 0.935f, "BACK", backBtnRect);
+    }
+
+    private void drawShopItem(Canvas canvas, float left, float top, float w, float h, int id) {
+        // Background
+        RectF bg = shopItemRects[id];
+        bg.set(left, top, left + w, top + h);
+        shopItemBgPaint.setColor(SHOP_COLORS[id]);
+        shopItemBgPaint.setAlpha(180);
+        canvas.drawRoundRect(bg, h * 0.15f, h * 0.15f, shopItemBgPaint);
+
+        // Icon circle
+        float iconR = h * 0.36f;
+        float iconX = left + iconR + h * 0.08f;
+        float iconCY = top + h * 0.5f;
+        Paint iconCircle = new Paint(Paint.ANTI_ALIAS_FLAG);
+        iconCircle.setColor(Color.argb(120, 255, 255, 255));
+        iconCircle.setStyle(Paint.Style.FILL);
+        canvas.drawCircle(iconX, iconCY, iconR, iconCircle);
+        canvas.drawText(SHOP_ICONS[id], iconX, iconCY + shopIconPaint.getTextSize() * 0.36f, shopIconPaint);
+
+        // Name + description
+        float textX = iconX + iconR + h * 0.12f;
+        canvas.drawText(SHOP_NAMES[id], textX, top + h * 0.40f, shopItemNamePaint);
+        canvas.drawText(SHOP_DESC[id],  textX, top + h * 0.70f, shopItemDescPaint);
+
+        // Level / count and cost on the right
+        boolean isMax      = shopItemIsMax(id);
+        int currentLevel   = shopItemCurrentLevel(id);
+        int maxLevel       = shopItemMaxLevel(id);
+        String levelStr    = currentLevel + " / " + maxLevel;
+        float rightX       = left + w - h * 0.12f;
+
+        shopItemNamePaint.setTextAlign(Paint.Align.RIGHT);
+        canvas.drawText(levelStr, rightX, top + h * 0.40f, shopItemNamePaint);
+        shopItemNamePaint.setTextAlign(Paint.Align.LEFT);
+
+        if (isMax) {
+            shopMaxPaint.setTextAlign(Paint.Align.RIGHT);
+            canvas.drawText("MAX", rightX, top + h * 0.72f, shopMaxPaint);
+            shopMaxPaint.setTextAlign(Paint.Align.LEFT);
+        } else {
+            int cost = shopItemCost(id);
+            String costStr = "\u2605 " + cost;
+            shopCostPaint.setTextAlign(Paint.Align.RIGHT);
+            shopCostPaint.setColor(coins >= cost ? Color.rgb(255, 220, 60) : Color.rgb(200, 80, 80));
+            canvas.drawText(costStr, rightX, top + h * 0.72f, shopCostPaint);
+            shopCostPaint.setTextAlign(Paint.Align.LEFT);
+        }
     }
 
     // ══════════════════════════════════════════════════════════════════════════
@@ -596,6 +930,7 @@ public class GameView extends SurfaceView implements SurfaceHolder.Callback {
     @Override
     public boolean onTouchEvent(MotionEvent event) {
         float ex = event.getX();
+        float ey = event.getY();
 
         switch (event.getActionMasked()) {
             case MotionEvent.ACTION_DOWN:
@@ -608,10 +943,49 @@ public class GameView extends SurfaceView implements SurfaceHolder.Callback {
 
             case MotionEvent.ACTION_UP:
             case MotionEvent.ACTION_POINTER_UP:
-                if (gameState == State.MENU || gameState == State.GAME_OVER) {
-                    startGame();
+                if (gameState == State.MENU) {
+                    if (shopBtnRect.contains(ex, ey)) {
+                        shopReturnState = State.MENU;
+                        gameState = State.SHOP;
+                    } else {
+                        // Tapping anywhere else (including PLAY button) starts the game
+                        startGame();
+                    }
+                } else if (gameState == State.GAME_OVER) {
+                    if (!reviveBtnRect.isEmpty() && reviveBtnRect.contains(ex, ey)) {
+                        // Use a revive
+                        reviveCount--;
+                        saveProgress();
+                        lives = 1;
+                        invincibleFrames = HIT_INVINCIBLE * 2;
+                        gameState = State.PLAYING;
+                    } else if (shopBtnRect.contains(ex, ey)) {
+                        shopReturnState = State.GAME_OVER;
+                        gameState = State.SHOP;
+                    } else {
+                        startGame();
+                    }
                 } else if (gameState == State.PAUSED) {
                     gameState = State.PLAYING;
+                } else if (gameState == State.PLAYING) {
+                    // Use a key (spawns a guaranteed power-up) if tapping KEY button
+                    if (keyCount > 0 && !keyBtnRect.isEmpty() && keyBtnRect.contains(ex, ey)) {
+                        keyCount--;
+                        powerUps.add(new PowerUp(screenW, screenH));
+                        saveProgress();
+                    }
+                } else if (gameState == State.SHOP) {
+                    if (backBtnRect.contains(ex, ey)) {
+                        gameState = shopReturnState;
+                    } else {
+                        // Check if any shop item was tapped
+                        for (int i = 0; i < SHOP_ITEM_COUNT; i++) {
+                            if (shopItemRects[i].contains(ex, ey)) {
+                                buyShopItem(i);
+                                break;
+                            }
+                        }
+                    }
                 }
                 break;
         }
