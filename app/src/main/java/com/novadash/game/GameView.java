@@ -448,6 +448,8 @@ public class GameView extends SurfaceView implements SurfaceHolder.Callback {
                     spawnParticles(chest.getX(), chest.getY(), Color.rgb(215, 170, 35), 16);
                     if (chest.getRewardType() == Chest.RewardType.COINS) {
                         coins += chest.getCoinReward();
+                        // Extra gold burst to confirm coin reward
+                        spawnParticles(chest.getX(), chest.getY(), Color.rgb(255, 215, 0), 10);
                     } else {
                         applyPowerUp(chest.getPowerUpReward());
                         spawnParticles(chest.getX(), chest.getY(),
@@ -616,8 +618,9 @@ public class GameView extends SurfaceView implements SurfaceHolder.Callback {
         canvas.drawText(EMOJI_KEY + " " + keys + "  " + EMOJI_COIN + " " + coins,
                 screenW - pad, screenH - bottomPad, coinHudPaint);
 
-        // "Need a key!" notification (centred, fades slightly)
+        // "Need a key!" notification (centred, fades out as timer counts down to 0)
         if (noKeyNotifyTimer > 0) {
+            // Alpha decreases from 255 (full) to 0 as noKeyNotifyTimer approaches 0 – fade-out
             int alpha = Math.min(255, noKeyNotifyTimer * NOTIFY_FADE_RATE);
             notifyPaint.setAlpha(alpha);
             drawTextFitted(canvas, EMOJI_LOCK + " Need a key! Visit the shop.",

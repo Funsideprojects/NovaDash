@@ -11,11 +11,17 @@ import java.util.Random;
  * A locked treasure chest that drifts down from the top of the screen during a round.
  *
  * Opening requires a key (bought from the shop). Reward on opening is either a
- * random amount of coins (10–100) or a random power-up type.
+ * random amount of coins ({@value #MIN_COIN_REWARD}–{@value #MAX_COIN_REWARD}) or a
+ * random power-up type.
  */
 public class Chest {
 
     public enum RewardType { COINS, POWER_UP }
+
+    /** Minimum number of coins awarded when a chest contains coins. */
+    private static final int MIN_COIN_REWARD = 10;
+    /** Maximum number of coins awarded when a chest contains coins. */
+    private static final int MAX_COIN_REWARD = 100;
 
     private float x, y;
     private final float w, h;
@@ -47,7 +53,8 @@ public class Chest {
         // Determine reward at spawn time
         if (RNG.nextFloat() < 0.5f) {
             rewardType    = RewardType.COINS;
-            coinReward    = 10 + RNG.nextInt(91); // 10–100 coins (inclusive)
+            coinReward    = MIN_COIN_REWARD
+                    + RNG.nextInt(MAX_COIN_REWARD - MIN_COIN_REWARD + 1);
             powerUpReward = null;
         } else {
             rewardType    = RewardType.POWER_UP;
