@@ -47,7 +47,7 @@ public class Chest {
         // Determine reward at spawn time
         if (RNG.nextFloat() < 0.5f) {
             rewardType    = RewardType.COINS;
-            coinReward    = 10 + RNG.nextInt(91); // 10–100 coins
+            coinReward    = 10 + RNG.nextInt(91); // 10–100 coins (inclusive)
             powerUpReward = null;
         } else {
             rewardType    = RewardType.POWER_UP;

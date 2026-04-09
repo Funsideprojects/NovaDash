@@ -58,6 +58,11 @@ public class GameView extends SurfaceView implements SurfaceHolder.Callback {
     private static final String EMOJI_KEY  = "\uD83D\uDD11"; // 🔑
     private static final String EMOJI_LOCK = "\uD83D\uDD12"; // 🔒
 
+    /** Width of standard buttons as a fraction of screen width. */
+    private static final float BTN_WIDTH_RATIO = 0.52f;
+    /** Multiplier for the "no-key" notification fade-in alpha per remaining frame. */
+    private static final int NOTIFY_FADE_RATE = 4;
+
     // ── Game state ─────────────────────────────────────────────────────────────
 
     private enum State { MENU, PLAYING, PAUSED, GAME_OVER, SHOP }
@@ -613,7 +618,7 @@ public class GameView extends SurfaceView implements SurfaceHolder.Callback {
 
         // "Need a key!" notification (centred, fades slightly)
         if (noKeyNotifyTimer > 0) {
-            int alpha = Math.min(255, noKeyNotifyTimer * 4);
+            int alpha = Math.min(255, noKeyNotifyTimer * NOTIFY_FADE_RATE);
             notifyPaint.setAlpha(alpha);
             drawTextFitted(canvas, EMOJI_LOCK + " Need a key! Visit the shop.",
                     screenW / 2f, screenH * 0.45f, notifyPaint, screenW * 0.88f);
@@ -722,7 +727,7 @@ public class GameView extends SurfaceView implements SurfaceHolder.Callback {
 
         // Item description
         subtitlePaint.setColor(Color.rgb(190, 225, 255));
-        drawTextFitted(canvas, EMOJI_KEY + " Key  \u2013  " + KEY_COST + " coins",
+        drawTextFitted(canvas, EMOJI_KEY + " Key  -  " + KEY_COST + " coins",
                 cx, cy + screenH * 0.04f, subtitlePaint, maxW);
         legendPaint.setColor(Color.rgb(160, 200, 255));
         drawTextFitted(canvas, "Use keys to open locked chests mid-round.",
@@ -771,7 +776,7 @@ public class GameView extends SurfaceView implements SurfaceHolder.Callback {
     }
 
     private void drawButton(Canvas canvas, float cx, float cy, String label) {
-        float btnW = screenW * 0.52f;
+        float btnW = screenW * BTN_WIDTH_RATIO;
         float btnH = screenH * 0.075f;
         float cornerRadius = screenH * 0.015f;
         RectF rect = new RectF(cx - btnW / 2, cy - btnH / 2, cx + btnW / 2, cy + btnH / 2);
@@ -781,7 +786,7 @@ public class GameView extends SurfaceView implements SurfaceHolder.Callback {
     }
 
     private void drawButtonDisabled(Canvas canvas, float cx, float cy, String label) {
-        float btnW = screenW * 0.52f;
+        float btnW = screenW * BTN_WIDTH_RATIO;
         float btnH = screenH * 0.075f;
         float cornerRadius = screenH * 0.015f;
         RectF rect = new RectF(cx - btnW / 2, cy - btnH / 2, cx + btnW / 2, cy + btnH / 2);
@@ -794,7 +799,7 @@ public class GameView extends SurfaceView implements SurfaceHolder.Callback {
 
     /** Stores the bounding rect of a standard button centred at (cx, cy) into {@code out}. */
     private void recordButtonRect(RectF out, float cx, float cy) {
-        float btnW = screenW * 0.52f;
+        float btnW = screenW * BTN_WIDTH_RATIO;
         float btnH = screenH * 0.075f;
         out.set(cx - btnW / 2, cy - btnH / 2, cx + btnW / 2, cy + btnH / 2);
     }
