@@ -69,11 +69,7 @@ public class Player {
     }
 
     public void update() {
-        if (lerpFactor >= 1.0f) {
-            x = targetX;
-        } else {
-            x += (targetX - x) * lerpFactor;
-        }
+        x += (targetX - x) * lerpFactor;
         engineFlicker = (engineFlicker + 1) % 12;
     }
 

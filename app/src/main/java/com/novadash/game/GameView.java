@@ -83,6 +83,11 @@ public class GameView extends SurfaceView implements SurfaceHolder.Callback {
     private int coins;
     /** Coins earned in the current run (shown on game over). */
     private int coinsThisRun;
+    /**
+     * Score at which coins were last calculated. Used to award only incremental
+     * coins when a player revives mid-run, preventing coin-farming exploits.
+     */
+    private long coinsBaseScore;
     /** 0–5: increases ship movement responsiveness. */
     private int speedUpgradeLevel;
     /** 0–5: adds one extra starting life per level. */
@@ -321,6 +326,7 @@ public class GameView extends SurfaceView implements SurfaceHolder.Callback {
 
         score            = 0;
         coinsThisRun     = 0;
+        coinsBaseScore   = 0;
         lives            = 3 + resistanceUpgradeLevel;
         frameCount       = 0;
         difficulty       = 1.0f;
@@ -449,8 +455,10 @@ public class GameView extends SurfaceView implements SurfaceHolder.Callback {
                     lives--;
                     invincibleFrames = HIT_INVINCIBLE;
                     if (lives <= 0) {
-                        coinsThisRun = (int)(score / 50);
-                        coins += coinsThisRun;
+                        int earned = (int)((score - coinsBaseScore) / 50);
+                        coinsBaseScore = score;
+                        coinsThisRun += earned;
+                        coins += earned;
                         if (score > highScore) highScore = (int) score;
                         saveProgress();
                         gameState = State.GAME_OVER;
@@ -813,7 +821,7 @@ public class GameView extends SurfaceView implements SurfaceHolder.Callback {
             case SHOP_KEY:        return 30;
             case SHOP_SPEED:      return 100 * (level + 1);
             case SHOP_RESISTANCE: return 100 * (level + 1);
-            case SHOP_DURATION:   return  80 * (level + 1);
+            case SHOP_DURATION:   return 100 * (level + 1);
         }
         return 0;
     }
